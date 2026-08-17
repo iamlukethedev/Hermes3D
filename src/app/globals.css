@@ -1,0 +1,28 @@
+@import "tailwindcss";
+
+:root {
+  --background: #05060a;
+  --foreground: #e8ecf4;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+html,
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+}
+
+/* Subtle radial glow behind the 3D canvas. */
+.hermes-backdrop {
+  background:
+    radial-gradient(60% 60% at 50% 40%, rgba(88, 101, 242, 0.18), transparent 70%),
+    radial-gradient(40% 40% at 80% 80%, rgba(236, 72, 153, 0.12), transparent 70%),
+    var(--background);
+}
