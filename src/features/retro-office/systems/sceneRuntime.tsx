@@ -153,7 +153,8 @@ export function PingPongBall({
     const shadowLift = THREE.MathUtils.clamp((ballY - bounceY) / 0.28, 0, 1);
     const shadowScale = THREE.MathUtils.lerp(0.14, 0.26, shadowLift);
     shadowRef.current.scale.set(shadowScale, shadowScale, shadowScale);
-    shadowMatRef.current.opacity = THREE.MathUtils.lerp(0.34, 0.12, shadowLift);
+    // Opacity reduced ~40% now that the ball also casts a real shadow.
+    shadowMatRef.current.opacity = THREE.MathUtils.lerp(0.2, 0.07, shadowLift);
   });
 
   return (
@@ -169,18 +170,13 @@ export function PingPongBall({
           ref={shadowMatRef}
           color="#09110d"
           transparent
-          opacity={0.24}
+          opacity={0.14}
           depthWrite={false}
         />
       </mesh>
-      <mesh ref={ballRef} visible={false}>
+      <mesh ref={ballRef} visible={false} castShadow>
         <sphereGeometry args={[PING_PONG_BALL_RADIUS, 16, 12]} />
-        <meshStandardMaterial
-          color="#ff8c1a"
-          roughness={0.18}
-          emissive="#ffb347"
-          emissiveIntensity={0.85}
-        />
+        <meshStandardMaterial color="#ffffff" roughness={0.3} />
       </mesh>
     </group>
   );
