@@ -177,8 +177,11 @@ function OfficeFlagPole({
 }
 
 // One perimeter wall: plaster lower wall, glass strip, mullion posts and a
-// metal cap rail. The overall x/z footprint matches the old 1-unit tall box
-// exactly so navigation and tests are unaffected.
+// metal cap rail. Roughly 1.7 units tall overall so the walls read taller
+// than agents (~1.0) and tall furniture such as the fridge (~1.4), with the
+// upper part kept as glass so the interior stays visible from the overview
+// camera. The x/z footprint still matches the old 1-unit tall box exactly so
+// navigation and tests are unaffected.
 function PerimeterWall({
   center,
   length,
@@ -193,8 +196,8 @@ function PerimeterWall({
     [length],
   );
   const thickness = 0.12;
-  const lowerHeight = 0.55;
-  const glassHeight = 0.4;
+  const lowerHeight = 0.9;
+  const glassHeight = 0.75;
   const capHeight = 0.05;
   const glassThickness = 0.03;
   const glassCenterY = lowerHeight + glassHeight / 2;
