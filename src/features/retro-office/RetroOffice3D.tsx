@@ -5269,7 +5269,10 @@ export function RetroOffice3D({
             />
 
             {/* Sky, image-based lighting, sun rig, fog and daylight drift. */}
-            <SceneAtmosphere config={graphicsQualityConfig} />
+            <SceneAtmosphere
+              config={graphicsQualityConfig}
+              remoteOfficeEnabled={remoteOfficeEnabled}
+            />
 
             {/* Post-processing: AO, bloom, vignette, filmic tone mapping. */}
             <ScenePostFx

@@ -556,7 +556,7 @@ export const FloorAndWalls = memo(function FloorAndWalls({
           >
             <planeGeometry args={[gymZoneFloorWidth, roomZoneFloorHeight]} />
             <meshStandardMaterial
-              color="#2e3138"
+              color="#40464f"
               map={gymRubber.map}
               roughnessMap={gymRubber.roughnessMap}
               normalMap={gymRubber.normalMap}
@@ -573,7 +573,7 @@ export const FloorAndWalls = memo(function FloorAndWalls({
             >
               <planeGeometry args={[gymZoneFloorWidth, roomZoneFloorHeight]} />
               <meshStandardMaterial
-                color="#2e3138"
+                color="#40464f"
                 map={gymRubber.map}
                 roughnessMap={gymRubber.roughnessMap}
                 normalMap={gymRubber.normalMap}
