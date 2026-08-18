@@ -3,7 +3,7 @@ import type {
   SkillStatusEntry,
 } from "@/lib/skills/types";
 
-export type PackagedSkillId = "soundhermes" | "task-manager" | "todo-board";
+export type PackagedSkillId = "soundhermes" | "todo-board";
 
 export type PackagedSkillDefinition = {
   packageId: PackagedSkillId;
@@ -32,16 +32,6 @@ const PACKAGED_SKILLS: PackagedSkillDefinition[] = [
     installSource: "hermes-workspace",
     creatorName: "iamlukethedev",
     creatorUrl: "http://x.com/iamlukethedev/",
-  },
-  {
-    packageId: "task-manager",
-    skillKey: "task-manager",
-    name: "task-manager",
-    description:
-      "Capture actionable requests as persistent tasks and keep a shared Kanban task store in sync.",
-    installSource: "hermes-workspace",
-    creatorName: "iamlukethedev",
-    creatorUrl: "https://github.com/iamlukethedev",
   },
   {
     packageId: "soundhermes",

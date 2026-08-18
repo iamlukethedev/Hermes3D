@@ -94,19 +94,6 @@ export const DEFAULT_SKILL_TRIGGER_FALLBACKS_BY_SKILL_KEY: Record<
     movementTarget: "desk",
     skipIfAlreadyThere: true,
   },
-  "task-manager": {
-    anyPhrases: [
-      "add a task",
-      "create a task",
-      "track this task",
-      "task status",
-      "mark this done",
-      "block this task",
-      "what tasks do we have",
-    ],
-    movementTarget: "desk",
-    skipIfAlreadyThere: true,
-  },
   soundhermes: {
     anyPhrases: [
       "spotify",

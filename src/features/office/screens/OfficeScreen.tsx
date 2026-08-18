@@ -147,7 +147,6 @@ import type {
 import { AnalyticsPanel } from "@/features/office/components/panels/AnalyticsPanel";
 import { HistoryPanel } from "@/features/office/components/panels/HistoryPanel";
 import { InboxPanel } from "@/features/office/components/panels/InboxPanel";
-import { KanbanDisabledPanel } from "@/features/office/components/panels/KanbanDisabledPanel";
 import { PlaybooksPanel } from "@/features/office/components/panels/PlaybooksPanel";
 import { SkillsMarketplaceModal } from "@/features/office/components/panels/SkillsMarketplaceModal";
 import { TaskBoardPanel } from "@/features/office/components/panels/TaskBoardPanel";
@@ -1099,18 +1098,6 @@ export function OfficeScreen({
   const [gatewayModels, setGatewayModels] = useState<GatewayModelChoice[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [marketplaceOpen, setMarketplaceOpen] = useState(false);
-  const [kanbanInstallPromptOpen, setKanbanInstallPromptOpen] = useState(false);
-  const [kanbanInstallProgress, setKanbanInstallProgress] = useState<{
-    active: boolean;
-    percent: number;
-    message: string;
-    error: string | null;
-  }>({
-    active: false,
-    percent: 0,
-    message: "",
-    error: null,
-  });
   const [danceUntilByAgentId, setDanceUntilByAgentId] = useState<Record<string, number>>({});
   const initJukeboxStore = useJukeboxStore((state) => state.init);
   const jukeboxToken = useJukeboxStore((state) => state.token);
@@ -4271,19 +4258,6 @@ export function OfficeScreen({
       }) ?? null,
     [marketplace.skillsReport],
   );
-  const taskManagerSkill = useMemo<SkillStatusEntry | null>(
-    () =>
-      marketplace.skillsReport?.skills.find((skill) => {
-        const normalizedKey = skill.skillKey.trim().toLowerCase();
-        const normalizedName = skill.name.trim().toLowerCase();
-        return normalizedKey === "task-manager" || normalizedName === "task-manager";
-      }) ?? null,
-    [marketplace.skillsReport],
-  );
-  const taskManagerReady = useMemo(
-    () => (taskManagerSkill ? deriveSkillReadinessState(taskManagerSkill) === "ready" : false),
-    [taskManagerSkill],
-  );
   const soundhermesReady = useMemo(
     () => (soundhermesSkill ? deriveSkillReadinessState(soundhermesSkill) === "ready" : false),
     [soundhermesSkill]
@@ -4500,7 +4474,6 @@ export function OfficeScreen({
           monitorAgentId={monitorAgentId}
           monitorByAgentId={monitorByAgentId}
           githubSkill={githubSkill}
-          taskManagerEnabled={taskManagerReady}
           soundhermesEnabled={soundhermesReady}
           officeTitle={officeTitle}
           officeTitleLoaded={officeTitleLoaded}
@@ -4602,9 +4575,6 @@ export function OfficeScreen({
           onJukeboxInteract={() => {
             setJukeboxOpen(true);
           }}
-          onKanbanInteract={() => {
-            setKanbanInstallPromptOpen(true);
-          }}
           taskBoardAgents={state.agents}
           taskBoardCardsByStatus={taskBoard.cardsByStatus}
           taskBoardSelectedCard={taskBoard.selectedCard}
@@ -4646,75 +4616,6 @@ export function OfficeScreen({
               }}
             />
           )
-        ) : null}
-        {kanbanInstallPromptOpen ? (
-          <KanbanDisabledPanel
-            onClose={() => {
-              if (kanbanInstallProgress.active) {
-                return;
-              }
-              setKanbanInstallPromptOpen(false);
-              setKanbanInstallProgress({
-                active: false,
-                percent: 0,
-                message: "",
-                error: null,
-              });
-            }}
-            onInstall={() => {
-              const targetAgentId =
-                (selectedChatAgentId ?? state.selectedAgentId ?? state.agents[0]?.agentId ?? "")
-                  .trim() || null;
-              setKanbanInstallProgress({
-                active: true,
-                percent: 8,
-                message: "Starting task-manager installation.",
-                error: null,
-              });
-              void (async () => {
-                try {
-                  await marketplace.handleInstallPackagedSkillAndEnable({
-                    skillKey: "task-manager",
-                    agentId: targetAgentId,
-                    onProgress: ({ percent, message }) => {
-                      setKanbanInstallProgress({
-                        active: true,
-                        percent,
-                        message,
-                        error: null,
-                      });
-                    },
-                  });
-                  setKanbanInstallProgress({
-                    active: true,
-                    percent: 100,
-                    message: "Refreshing task-manager state in Hermes3D.",
-                    error: null,
-                  });
-                  setKanbanInstallPromptOpen(false);
-                  setKanbanInstallProgress({
-                    active: false,
-                    percent: 0,
-                    message: "",
-                    error: null,
-                  });
-                } catch (error) {
-                  setKanbanInstallProgress((current) => ({
-                    ...current,
-                    active: false,
-                    error:
-                      error instanceof Error
-                        ? error.message
-                        : "Failed to install task-manager.",
-                  }));
-                }
-              })();
-            }}
-            installing={kanbanInstallProgress.active}
-            progressPercent={kanbanInstallProgress.percent}
-            progressMessage={kanbanInstallProgress.message}
-            errorMessage={kanbanInstallProgress.error}
-          />
         ) : null}
       </section>
 

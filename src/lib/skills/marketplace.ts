@@ -102,19 +102,6 @@ const SKILL_MARKETPLACE_OVERRIDES: Record<
     editorBadge: "Hermes3D test",
     hideStats: true,
   },
-  "task-manager": {
-    category: "Productivity",
-    tagline:
-      "Turns actionable requests into persistent shared tasks that power the Hermes3D Kanban board.",
-    capabilities: [
-      "Automatic task capture",
-      "Task lifecycle tracking",
-      "Shared Kanban state",
-    ],
-    featured: true,
-    editorBadge: "Kanban core",
-    hideStats: true,
-  },
   soundhermes: {
     category: "Audio",
     tagline:

@@ -2278,7 +2278,6 @@ export function RetroOffice3D({
   monitorAgentId = null,
   monitorByAgentId = EMPTY_MONITOR_MAP,
   githubSkill = null,
-  taskManagerEnabled = false,
   soundhermesEnabled = false,
   officeTitle = "Luke Headquarters",
   officeTitleLoaded = false,
@@ -2337,7 +2336,6 @@ export function RetroOffice3D({
   onQaLabDismiss,
   onOpenGithubSkillSetup,
   onJukeboxInteract,
-  onKanbanInteract,
   taskBoardAgents = [],
   taskBoardCardsByStatus = {
     inbox: [],
@@ -2392,7 +2390,6 @@ export function RetroOffice3D({
   monitorAgentId?: string | null;
   monitorByAgentId?: OfficeDeskMonitorMap;
   githubSkill?: SkillStatusEntry | null;
-  taskManagerEnabled?: boolean;
   soundhermesEnabled?: boolean;
   officeTitle?: string;
   officeTitleLoaded?: boolean;
@@ -2457,7 +2454,6 @@ export function RetroOffice3D({
   onQaLabDismiss?: () => void;
   onOpenGithubSkillSetup?: () => void;
   onJukeboxInteract?: () => void;
-  onKanbanInteract?: () => void;
   taskBoardAgents?: AgentState[];
   taskBoardCardsByStatus?: Record<TaskBoardStatus, TaskBoardCard[]>;
   taskBoardSelectedCard?: TaskBoardCard | null;
@@ -4470,14 +4466,11 @@ export function RetroOffice3D({
     [deskByAgentRef, furniture],
   );
 
+  // Task management is built into the Hermes agent, so the board is always
+  // available — no skill install gate.
   const openKanbanBoard = useCallback(
     (item: FurnitureItem | null) => {
       if (!item || item.type !== "kanban_board") return;
-      if (!taskManagerEnabled) {
-        setActiveKanbanUid(null);
-        onKanbanInteract?.();
-        return;
-      }
       setFollowAgentId(null);
       setActiveAtmUid(null);
       setActiveGithubTerminalUid(null);
@@ -4497,8 +4490,6 @@ export function RetroOffice3D({
       manualPhoneBoothOpen,
       manualSmsBoothOpen,
       onMonitorSelect,
-      onKanbanInteract,
-      taskManagerEnabled,
     ],
   );
 

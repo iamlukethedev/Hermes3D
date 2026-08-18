@@ -296,120 +296,6 @@ export const useOfficeSkillsMarketplace = ({
     [client, runSkillMutation, selectedAgent]
   );
 
-  const handleInstallPackagedSkillAndEnable = useCallback(
-    async (params: {
-      skillKey: string;
-      agentId?: string | null;
-      onProgress?: (progress: { percent: number; message: string }) => void;
-    }) => {
-      const packagedSkill = getPackagedSkillBySkillKey(params.skillKey);
-      if (!packagedSkill) {
-        setMessage({
-          kind: "error",
-          text: `No packaged marketplace skill was found for ${params.skillKey.trim() || "that entry"}.`,
-        });
-        return;
-      }
-
-      const targetAgentId = params.agentId?.trim() || selectedAgentId?.trim() || "";
-      if (!targetAgentId) {
-        setMessage({
-          kind: "error",
-          text: "Select an agent before installing marketplace skills.",
-        });
-        return;
-      }
-
-      setSelectedAgentId(targetAgentId);
-      setBusySkillKey(packagedSkill.skillKey);
-      setError(null);
-      setMessage(null);
-      onSkillActivityStart?.(targetAgentId);
-      try {
-        params.onProgress?.({
-          percent: 12,
-          message: "Preparing the workspace skill install.",
-        });
-        const initialReport = await loadAgentSkillStatus(client, targetAgentId);
-        params.onProgress?.({
-          percent: 38,
-          message: "Installing task-manager into the workspace.",
-        });
-        await installPackagedSkillViaGatewayAgent({
-          client,
-          request: {
-            packageId: packagedSkill.packageId,
-            source: packagedSkill.installSource,
-            workspaceDir: initialReport.workspaceDir,
-            managedSkillsDir: initialReport.managedSkillsDir,
-            agentId: targetAgentId,
-            agentName:
-              agents.find((agent) => agent.agentId === targetAgentId)?.name ?? undefined,
-          },
-        });
-        params.onProgress?.({
-          percent: 62,
-          message: "Enabling task-manager for this gateway.",
-        });
-        await updateSkill(client, { skillKey: packagedSkill.skillKey, enabled: true });
-        params.onProgress?.({
-          percent: 78,
-          message: "Enabling task-manager for the main agent.",
-        });
-        const refreshedReport = await loadAgentSkillStatus(client, targetAgentId);
-        await setAgentSkillEnabled({
-          client,
-          agentId: targetAgentId,
-          skillName: packagedSkill.name,
-          enabled: true,
-          visibleSkills: refreshedReport.skills,
-        });
-        params.onProgress?.({
-          percent: 92,
-          message: "Refreshing skill state in Hermes3D.",
-        });
-        await loadMarketplace(targetAgentId);
-        params.onProgress?.({
-          percent: 100,
-          message: "Task-manager installed and enabled.",
-        });
-        const agentName =
-          agents.find((agent) => agent.agentId === targetAgentId)?.name ?? "the main agent";
-        setMessage({
-          kind: "success",
-          text: `Installed and enabled ${packagedSkill.name.trim()} for ${agentName}.`,
-        });
-      } catch (err) {
-        const nextMessage =
-          err instanceof Error
-            ? err.message
-            : "Failed to install and enable the skill.";
-        setError(nextMessage);
-        setMessage({
-          kind: "error",
-          text: nextMessage,
-        });
-        if (!isGatewayDisconnectLikeError(err)) {
-          console.error(nextMessage);
-        }
-        throw err instanceof Error ? err : new Error(nextMessage);
-      } finally {
-        onSkillActivityEnd?.(targetAgentId);
-        setBusySkillKey((current) =>
-          current === packagedSkill.skillKey ? null : current,
-        );
-      }
-    },
-    [
-      agents,
-      client,
-      loadMarketplace,
-      onSkillActivityEnd,
-      onSkillActivityStart,
-      selectedAgentId,
-    ],
-  );
-
   const handleSetSkillGlobalEnabled = useCallback(
     async (skillKey: string, enabled: boolean) => {
       await runSkillMutation({
@@ -464,7 +350,6 @@ export const useOfficeSkillsMarketplace = ({
     handleSetSkillEnabled,
     handleInstallSkill,
     handleInstallPackagedSkill,
-    handleInstallPackagedSkillAndEnable,
     handleSetSkillGlobalEnabled,
     handleRemoveSkill,
   };
