@@ -1,9 +1,12 @@
 name: Docker Publish
 
+# Publishes only from main and version tags. Feature branches build the app
+# in regular CI; publishing per branch just spams the registry and marks
+# every PR red when the push fails.
 on:
   push:
     branches:
-      - "**"
+      - "main"
     tags:
       - "v*"
   workflow_dispatch:
