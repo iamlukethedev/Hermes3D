@@ -1,5 +1,7 @@
+import { useMemo } from "react";
 import { SCALE } from "@/features/retro-office/core/constants";
 import { toWorld } from "@/features/retro-office/core/geometry";
+import { getBrushedMetalTextures } from "@/features/retro-office/core/proceduralTextures";
 import { BasicFurnitureModelProps } from "@/features/retro-office/objects/types";
 
 export function VendingMachineModel({
@@ -10,6 +12,7 @@ export function VendingMachineModel({
   editMode,
 }: BasicFurnitureModelProps) {
   const [wx, , wz] = toWorld(item.x, item.y);
+  const metal = useMemo(() => getBrushedMetalTextures(), []);
 
   return (
     <group
@@ -30,39 +33,68 @@ export function VendingMachineModel({
         onPointerOut?.();
       }}
     >
-      <mesh position={[0, 0.4, 0]}>
+      <mesh position={[0, 0.4, 0]} castShadow receiveShadow>
         <boxGeometry args={[0.35, 0.8, 0.26]} />
         <meshStandardMaterial
-          color="#2a3040"
-          roughness={0.7}
-          metalness={0.22}
+          color="#333a4d"
+          map={metal.map}
+          roughnessMap={metal.roughnessMap}
+          metalness={0.7}
         />
       </mesh>
       <mesh position={[0, 0.46, 0.132]}>
         <boxGeometry args={[0.29, 0.58, 0.01]} />
-        <meshStandardMaterial color="#c02020" roughness={0.5} metalness={0.1} />
+        <meshStandardMaterial color="#d02525" roughness={0.45} metalness={0.1} />
       </mesh>
-      <mesh position={[0, 0.57, 0.138]}>
-        <boxGeometry args={[0.22, 0.26, 0.006]} />
+      {/* Dark interior backdrop behind the glass window. */}
+      <mesh position={[0, 0.57, 0.1372]}>
+        <planeGeometry args={[0.21, 0.25]} />
         <meshStandardMaterial
-          color="#a8d4e8"
-          roughness={0.1}
-          metalness={0.3}
+          color="#0d1322"
+          emissive="#1c2a44"
+          emissiveIntensity={0.5}
+          roughness={0.8}
+        />
+      </mesh>
+      {/* Backlit product rows for the lit-from-inside look. */}
+      {[0.49, 0.57, 0.65].map((rowY) => (
+        <mesh key={rowY} position={[0, rowY, 0.1376]}>
+          <planeGeometry args={[0.19, 0.045]} />
+          <meshStandardMaterial
+            color="#ffe9c4"
+            emissive="#ffd28a"
+            emissiveIntensity={1.3}
+            roughness={0.6}
+          />
+        </mesh>
+      ))}
+      {/* Glass front over the product window. */}
+      <mesh position={[0, 0.57, 0.141]}>
+        <boxGeometry args={[0.22, 0.26, 0.004]} />
+        <meshPhysicalMaterial
+          color="#cfe8f6"
           transparent
-          opacity={0.75}
+          opacity={0.25}
+          roughness={0.05}
+          metalness={0}
         />
       </mesh>
       <mesh position={[0, 0.29, 0.138]}>
         <boxGeometry args={[0.18, 0.1, 0.006]} />
-        <meshStandardMaterial color="#1a1a2a" roughness={0.7} />
+        <meshStandardMaterial color="#232338" roughness={0.7} />
       </mesh>
       <mesh position={[0.09, 0.3, 0.142]}>
         <boxGeometry args={[0.038, 0.013, 0.005]} />
-        <meshStandardMaterial color="#888" metalness={0.5} roughness={0.4} />
+        <meshStandardMaterial
+          color="#9aa1a9"
+          map={metal.map}
+          roughnessMap={metal.roughnessMap}
+          metalness={0.75}
+        />
       </mesh>
-      <mesh position={[0, 0.07, 0.132]}>
+      <mesh position={[0, 0.07, 0.132]} receiveShadow>
         <boxGeometry args={[0.2, 0.055, 0.02]} />
-        <meshStandardMaterial color="#111" roughness={0.9} />
+        <meshStandardMaterial color="#1b1b1b" roughness={0.9} />
       </mesh>
     </group>
   );
@@ -76,6 +108,7 @@ export function DishwasherModel({
   editMode,
 }: BasicFurnitureModelProps) {
   const [wx, , wz] = toWorld(item.x, item.y);
+  const metal = useMemo(() => getBrushedMetalTextures(), []);
 
   return (
     <group
@@ -96,33 +129,44 @@ export function DishwasherModel({
         onPointerOut?.();
       }}
     >
-      <mesh position={[0, 0.19, 0]}>
+      <mesh position={[0, 0.19, 0]} castShadow receiveShadow>
         <boxGeometry args={[0.44, 0.38, 0.32]} />
         <meshStandardMaterial
-          color="#d1d5db"
-          roughness={0.3}
-          metalness={0.6}
+          color="#dfe3e8"
+          map={metal.map}
+          roughnessMap={metal.roughnessMap}
+          metalness={0.85}
         />
       </mesh>
-      <mesh position={[0, 0.39, 0]}>
+      <mesh position={[0, 0.39, 0]} castShadow receiveShadow>
         <boxGeometry args={[0.44, 0.04, 0.32]} />
         <meshStandardMaterial
-          color="#c8c4be"
+          color="#dcd8d1"
           roughness={0.6}
           metalness={0.05}
         />
       </mesh>
       <mesh position={[0, 0.25, 0.165]}>
         <boxGeometry args={[0.42, 0.28, 0.01]} />
-        <meshStandardMaterial color="#e5e7eb" roughness={0.2} metalness={0.5} />
+        <meshStandardMaterial
+          color="#eef1f4"
+          map={metal.map}
+          roughnessMap={metal.roughnessMap}
+          metalness={0.85}
+        />
       </mesh>
       <mesh position={[0, 0.36, 0.165]}>
         <boxGeometry args={[0.42, 0.06, 0.01]} />
-        <meshStandardMaterial color="#1f2937" />
+        <meshStandardMaterial color="#27313f" roughness={0.4} metalness={0.5} />
       </mesh>
+      {/* Status LED. */}
       <mesh position={[0.15, 0.36, 0.17]}>
         <circleGeometry args={[0.006, 8]} />
-        <meshBasicMaterial color="#10b981" />
+        <meshStandardMaterial
+          color="#10b981"
+          emissive="#10b981"
+          emissiveIntensity={2.5}
+        />
       </mesh>
     </group>
   );
@@ -136,6 +180,7 @@ export function StoveModel({
   editMode,
 }: BasicFurnitureModelProps) {
   const [wx, , wz] = toWorld(item.x, item.y);
+  const metal = useMemo(() => getBrushedMetalTextures(), []);
 
   return (
     <group
@@ -156,20 +201,21 @@ export function StoveModel({
         onPointerOut?.();
       }}
     >
-      <mesh position={[0, 0.19, 0]}>
+      <mesh position={[0, 0.19, 0]} castShadow receiveShadow>
         <boxGeometry args={[0.44, 0.38, 0.32]} />
         <meshStandardMaterial
-          color="#2a2a2a"
-          roughness={0.4}
-          metalness={0.6}
+          color="#3a3f45"
+          map={metal.map}
+          roughnessMap={metal.roughnessMap}
+          metalness={0.8}
         />
       </mesh>
-      <mesh position={[0, 0.39, 0]}>
+      <mesh position={[0, 0.39, 0]} castShadow receiveShadow>
         <boxGeometry args={[0.44, 0.04, 0.32]} />
         <meshStandardMaterial
-          color="#1a1a1a"
-          roughness={0.2}
-          metalness={0.8}
+          color="#202226"
+          roughness={0.15}
+          metalness={0.75}
         />
       </mesh>
       {[
@@ -180,16 +226,23 @@ export function StoveModel({
       ].map(([burnerX, burnerZ], index) => (
         <mesh key={index} position={[burnerX, 0.415, burnerZ]}>
           <cylinderGeometry args={[0.06, 0.06, 0.01, 16]} />
-          <meshStandardMaterial color="#111" roughness={0.5} />
+          <meshStandardMaterial color="#17181c" roughness={0.6} metalness={0.3} />
         </mesh>
       ))}
+      {/* Oven door glass. */}
       <mesh position={[0, 0.2, 0.165]}>
         <boxGeometry args={[0.38, 0.24, 0.01]} />
-        <meshStandardMaterial color="#111" roughness={0.1} metalness={0.9} />
+        <meshPhysicalMaterial
+          color="#15171c"
+          roughness={0.08}
+          metalness={0.5}
+          clearcoat={0.5}
+        />
       </mesh>
+      {/* Chrome door handle. */}
       <mesh position={[0, 0.3, 0.18]}>
         <boxGeometry args={[0.3, 0.015, 0.015]} />
-        <meshStandardMaterial color="#ccc" metalness={0.8} roughness={0.2} />
+        <meshStandardMaterial color="#e6eaef" metalness={0.95} roughness={0.08} />
       </mesh>
     </group>
   );
@@ -204,6 +257,7 @@ export function MicrowaveModel({
 }: BasicFurnitureModelProps) {
   const [wx, , wz] = toWorld(item.x, item.y);
   const yBase = (item.elevation ?? 0) + 0.42;
+  const metal = useMemo(() => getBrushedMetalTextures(), []);
 
   return (
     <group
@@ -224,21 +278,42 @@ export function MicrowaveModel({
         onPointerOut?.();
       }}
     >
-      <mesh position={[0, 0.1, 0]}>
+      <mesh position={[0, 0.1, 0]} castShadow receiveShadow>
         <boxGeometry args={[0.35, 0.2, 0.25]} />
         <meshStandardMaterial
-          color="#e0e0e0"
-          roughness={0.3}
-          metalness={0.4}
+          color="#eef1f4"
+          map={metal.map}
+          roughnessMap={metal.roughnessMap}
+          metalness={0.8}
         />
       </mesh>
+      {/* Door glass. */}
       <mesh position={[-0.05, 0.1, 0.13]}>
         <planeGeometry args={[0.2, 0.14]} />
-        <meshStandardMaterial color="#111" roughness={0.1} metalness={0.8} />
+        <meshPhysicalMaterial
+          color="#15171c"
+          roughness={0.08}
+          metalness={0.4}
+          clearcoat={0.5}
+        />
       </mesh>
       <mesh position={[0.12, 0.1, 0.13]}>
         <planeGeometry args={[0.08, 0.14]} />
-        <meshStandardMaterial color="#ccc" roughness={0.5} />
+        <meshStandardMaterial
+          color="#d5dae0"
+          map={metal.map}
+          roughnessMap={metal.roughnessMap}
+          metalness={0.7}
+        />
+      </mesh>
+      {/* Subtle clock display, kept below the bloom threshold. */}
+      <mesh position={[0.12, 0.15, 0.131]}>
+        <planeGeometry args={[0.05, 0.015]} />
+        <meshStandardMaterial
+          color="#34d399"
+          emissive="#34d399"
+          emissiveIntensity={0.9}
+        />
       </mesh>
     </group>
   );
@@ -255,6 +330,7 @@ export function WallCabinetModel({
   const width = (item.w ?? 80) * SCALE;
   const elevation = item.elevation ?? 0;
   const yPos = elevation > 0 ? elevation : 0.9;
+  const metal = useMemo(() => getBrushedMetalTextures(), []);
 
   return (
     <group
@@ -275,28 +351,38 @@ export function WallCabinetModel({
         onPointerOut?.();
       }}
     >
-      <mesh>
+      <mesh castShadow receiveShadow>
         <boxGeometry args={[width, 0.4, 0.25]} />
-        <meshStandardMaterial color="#3c4248" roughness={0.6} metalness={0.1} />
+        <meshStandardMaterial
+          color="#434a51"
+          roughnessMap={metal.roughnessMap}
+          roughness={0.9}
+          metalness={0.3}
+        />
       </mesh>
       <mesh position={[0, 0, 0.13]}>
         <boxGeometry args={[width - 0.02, 0.38, 0.01]} />
-        <meshStandardMaterial color="#4a5058" roughness={0.6} />
+        <meshStandardMaterial
+          color="#525960"
+          roughnessMap={metal.roughnessMap}
+          roughness={0.85}
+          metalness={0.3}
+        />
       </mesh>
       {width > 0.4 ? (
         <mesh position={[0, 0, 0.135]}>
           <boxGeometry args={[0.005, 0.38, 0.002]} />
-          <meshStandardMaterial color="#2a2a2a" />
+          <meshStandardMaterial color="#2f2f2f" />
         </mesh>
       ) : null}
       <mesh position={[0.02, -0.1, 0.14]}>
         <boxGeometry args={[0.01, 0.06, 0.01]} />
-        <meshStandardMaterial color="#ccc" metalness={0.8} />
+        <meshStandardMaterial color="#e6eaef" metalness={0.95} roughness={0.08} />
       </mesh>
       {width > 0.4 ? (
         <mesh position={[-0.02, -0.1, 0.14]}>
           <boxGeometry args={[0.01, 0.06, 0.01]} />
-          <meshStandardMaterial color="#ccc" metalness={0.8} />
+          <meshStandardMaterial color="#e6eaef" metalness={0.95} roughness={0.08} />
         </mesh>
       ) : null}
     </group>
@@ -311,6 +397,7 @@ export function SinkModel({
   editMode,
 }: BasicFurnitureModelProps) {
   const [wx, , wz] = toWorld(item.x, item.y);
+  const metal = useMemo(() => getBrushedMetalTextures(), []);
 
   return (
     <group
@@ -331,37 +418,40 @@ export function SinkModel({
         onPointerOut?.();
       }}
     >
-      <mesh position={[0, 0.19, 0]}>
+      <mesh position={[0, 0.19, 0]} castShadow receiveShadow>
         <boxGeometry args={[0.44, 0.38, 0.32]} />
         <meshStandardMaterial
-          color="#b0aca6"
+          color="#c2beb8"
           roughness={0.7}
           metalness={0.02}
         />
       </mesh>
-      <mesh position={[0, 0.39, 0]}>
+      <mesh position={[0, 0.39, 0]} castShadow receiveShadow>
         <boxGeometry args={[0.44, 0.04, 0.32]} />
         <meshStandardMaterial
-          color="#c8c4be"
+          color="#dcd8d1"
           roughness={0.6}
           metalness={0.05}
         />
       </mesh>
+      {/* Stainless basin. */}
       <mesh position={[0, 0.385, 0]}>
         <boxGeometry args={[0.27, 0.04, 0.22]} />
         <meshStandardMaterial
-          color="#9ebccc"
-          roughness={0.3}
-          metalness={0.12}
+          color="#c8d1d8"
+          map={metal.map}
+          roughnessMap={metal.roughnessMap}
+          metalness={0.9}
         />
       </mesh>
-      <mesh position={[0, 0.44, -0.1]}>
+      {/* Chrome faucet. */}
+      <mesh position={[0, 0.44, -0.1]} castShadow>
         <boxGeometry args={[0.03, 0.06, 0.03]} />
-        <meshStandardMaterial color="#909090" roughness={0.4} metalness={0.5} />
+        <meshStandardMaterial color="#e6eaef" metalness={0.95} roughness={0.08} />
       </mesh>
-      <mesh position={[0, 0.48, -0.04]}>
+      <mesh position={[0, 0.48, -0.04]} castShadow>
         <boxGeometry args={[0.025, 0.025, 0.1]} />
-        <meshStandardMaterial color="#909090" roughness={0.4} metalness={0.5} />
+        <meshStandardMaterial color="#e6eaef" metalness={0.95} roughness={0.08} />
       </mesh>
     </group>
   );

@@ -2,7 +2,7 @@
 
 import { Billboard, Text } from "@react-three/drei";
 import { useFrame } from "@react-three/fiber";
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { SCALE } from "@/features/retro-office/core/constants";
 import {
@@ -10,6 +10,7 @@ import {
   getItemRotationRadians,
   toWorld,
 } from "@/features/retro-office/core/geometry";
+import { getBrushedMetalTextures } from "@/features/retro-office/core/proceduralTextures";
 import type { InteractiveFurnitureModelProps } from "@/features/retro-office/objects/types";
 
 export type JukeboxModelProps = InteractiveFurnitureModelProps & {
@@ -19,10 +20,10 @@ export type JukeboxModelProps = InteractiveFurnitureModelProps & {
 };
 
 const C = {
-  cabinet: "#0d9488",
-  cabinetDark: "#0f766e",
-  metal: "#e2e8f0",
-  metalDark: "#94a3b8",
+  cabinet: "#10a897",
+  cabinetDark: "#12867b",
+  metal: "#e9edf3",
+  metalDark: "#a0aec0",
   neon: "#FF1493",
   neonActive: "#00FF00",
   display: "#042f2e",
@@ -47,6 +48,7 @@ export function JukeboxModel({
   const [localHovered, setLocalHovered] = useState(false);
   const recordRef = useRef<THREE.Mesh>(null);
   const glowRef = useRef<THREE.PointLight>(null);
+  const metal = useMemo(() => getBrushedMetalTextures(), []);
 
   const [wx, , wz] = toWorld(item.x, item.y);
   const { width, height } = getItemBaseSize(item);
@@ -83,26 +85,54 @@ export function JukeboxModel({
     >
       <group rotation={[0, rotY, 0]} scale={[scaleX, 1, scaleZ]}>
 
-        {/* Main cabinet body. */}
+        {/* Main cabinet body — glossy lacquered finish. */}
         <mesh position={[0, 0.75, 0]} castShadow receiveShadow>
           <boxGeometry args={[0.8, 1.2, 0.6]} />
-          <meshStandardMaterial
-            color={tint(highlighted ? "#0f9a8e" : C.cabinet, highlighted ? "#555" : "#444")}
-            roughness={0.6}
+          <meshPhysicalMaterial
+            color={tint(highlighted ? "#12ab9e" : C.cabinet, highlighted ? "#5f5f5f" : "#4d4d4d")}
+            roughness={0.35}
             metalness={0.1}
+            clearcoat={0.6}
+            clearcoatRoughness={0.15}
           />
         </mesh>
 
         {/* Cabinet top dome (tapered cylinder). */}
         <mesh position={[0, 1.4, 0]} castShadow>
           <cylinderGeometry args={[0.45, 0.5, 0.2, 32]} />
-          <meshStandardMaterial color={tint(C.cabinetDark, "#333")} roughness={0.5} metalness={0.2} />
+          <meshPhysicalMaterial
+            color={tint(C.cabinetDark, "#3a3a3a")}
+            roughness={0.35}
+            metalness={0.15}
+            clearcoat={0.6}
+            clearcoatRoughness={0.15}
+          />
         </mesh>
 
         {/* Chrome dome cap. */}
         <mesh position={[0, 1.55, 0]} castShadow>
           <sphereGeometry args={[0.15, 16, 16, 0, Math.PI * 2, 0, Math.PI / 2]} />
-          <meshStandardMaterial color={tint(C.metal, "#666")} roughness={0.3} metalness={0.8} />
+          <meshStandardMaterial color={tint(C.metal, "#707070")} roughness={0.08} metalness={0.95} />
+        </mesh>
+
+        {/* Neon trim: vertical side strips plus a header strip framing the front. */}
+        {[-0.37, 0.37].map((x) => (
+          <mesh key={x} position={[x, 0.75, 0.302]}>
+            <boxGeometry args={[0.02, 1.15, 0.005]} />
+            <meshStandardMaterial
+              color={tint(playing ? C.neonActive : C.neon, "#3a3a3a")}
+              emissive={enabled ? (playing ? C.neonActive : C.neon) : "#333"}
+              emissiveIntensity={enabled ? (playing ? 3.0 : 1.4) : 0.05}
+            />
+          </mesh>
+        ))}
+        <mesh position={[0, 1.32, 0.302]}>
+          <boxGeometry args={[0.72, 0.02, 0.005]} />
+          <meshStandardMaterial
+            color={tint(playing ? C.neonActive : C.neon, "#3a3a3a")}
+            emissive={enabled ? (playing ? C.neonActive : C.neon) : "#333"}
+            emissiveIntensity={enabled ? (playing ? 3.0 : 1.4) : 0.05}
+          />
         </mesh>
 
         {/* Display screen. */}
@@ -111,7 +141,21 @@ export function JukeboxModel({
           <meshStandardMaterial
             color={tint(C.display, "#1a1a1a")}
             emissive={enabled ? (playing ? C.neonActive : C.neon) : "#333"}
-            emissiveIntensity={enabled ? (localHovered || isHovered ? 0.5 : 0.2) : 0.08}
+            emissiveIntensity={
+              enabled ? (playing ? 2.2 : localHovered || isHovered ? 2.0 : 1.6) : 0.08
+            }
+          />
+        </mesh>
+
+        {/* Subtle glass overlay in front of the display. */}
+        <mesh position={[0, 1.1, 0.313]}>
+          <planeGeometry args={[0.62, 0.37]} />
+          <meshPhysicalMaterial
+            color="#ffffff"
+            transparent
+            opacity={0.15}
+            roughness={0.05}
+            metalness={0}
           />
         </mesh>
 
@@ -134,11 +178,11 @@ export function JukeboxModel({
           <planeGeometry args={[0.52, 0.38]} />
           <meshStandardMaterial color="#042f2e" roughness={0.9} metalness={0.1} />
         </mesh>
-        {/* Horizontal grill lines. */}
+        {/* Horizontal grill lines — chrome. */}
         {[-0.14, -0.07, 0, 0.07, 0.14].map((y) => (
           <mesh key={y} position={[0, 0.7 + y, 0.315]}>
             <boxGeometry args={[0.48, 0.01, 0.005]} />
-            <meshStandardMaterial color={C.metalDark} metalness={0.6} roughness={0.4} />
+            <meshStandardMaterial color={C.metal} metalness={0.95} roughness={0.08} />
           </mesh>
         ))}
 
@@ -154,7 +198,7 @@ export function JukeboxModel({
         {/* Record label. */}
         <mesh position={[0, 0.75, 0.32]} rotation={[Math.PI / 2, 0, 0]}>
           <circleGeometry args={[0.04, 32]} />
-          <meshStandardMaterial color={C.recordLabel} emissive={C.neon} emissiveIntensity={playing ? 0.8 : 0.3} />
+          <meshStandardMaterial color={C.recordLabel} emissive={C.neon} emissiveIntensity={playing ? 2.4 : 0.6} />
         </mesh>
 
         {/* Coloured selection buttons (grey when disabled). */}
@@ -165,26 +209,46 @@ export function JukeboxModel({
               <meshStandardMaterial
                 color={enabled ? color : "#555"}
                 emissive={enabled ? color : "#222"}
-                emissiveIntensity={enabled ? 0.5 : 0.05}
+                emissiveIntensity={enabled ? 1.8 : 0.05}
               />
             </mesh>
           ))}
         </group>
 
-        {/* Side grilles (translucent). */}
+        {/* Side grilles (brushed metal, translucent). */}
         <mesh position={[-0.35, 0.75, 0]} rotation={[0, Math.PI / 2, 0]}>
           <planeGeometry args={[0.8, 0.6]} />
-          <meshStandardMaterial color={tint(C.metalDark, "#3a3a3a")} roughness={0.5} metalness={0.4} transparent opacity={0.8} />
+          <meshStandardMaterial
+            color={tint(C.metalDark, "#3a3a3a")}
+            map={metal.map}
+            roughnessMap={metal.roughnessMap}
+            metalness={0.7}
+            transparent
+            opacity={0.8}
+          />
         </mesh>
         <mesh position={[0.35, 0.75, 0]} rotation={[0, -Math.PI / 2, 0]}>
           <planeGeometry args={[0.8, 0.6]} />
-          <meshStandardMaterial color={tint(C.metalDark, "#3a3a3a")} roughness={0.5} metalness={0.4} transparent opacity={0.8} />
+          <meshStandardMaterial
+            color={tint(C.metalDark, "#3a3a3a")}
+            map={metal.map}
+            roughnessMap={metal.roughnessMap}
+            metalness={0.7}
+            transparent
+            opacity={0.8}
+          />
         </mesh>
 
-        {/* Base plinth. */}
-        <mesh position={[0, 0.05, 0]} receiveShadow>
+        {/* Base plinth — lacquered to match the cabinet. */}
+        <mesh position={[0, 0.05, 0]} castShadow receiveShadow>
           <boxGeometry args={[0.9, 0.1, 0.7]} />
-          <meshStandardMaterial color={tint(C.cabinetDark, "#2a2a2a")} roughness={0.7} metalness={0.1} />
+          <meshPhysicalMaterial
+            color={tint(C.cabinetDark, "#2f2f2f")}
+            roughness={0.4}
+            metalness={0.1}
+            clearcoat={0.6}
+            clearcoatRoughness={0.2}
+          />
         </mesh>
 
         {/* Floating "Install skill" hint above the machine when disabled and hovered. */}
@@ -211,7 +275,7 @@ export function JukeboxModel({
         {(localHovered || isHovered) && (
           <mesh position={[0, 1.68, 0]}>
             <sphereGeometry args={[0.05, 16, 16]} />
-            <meshStandardMaterial color="#00FF00" emissive="#00FF00" emissiveIntensity={1} />
+            <meshStandardMaterial color="#00FF00" emissive="#00FF00" emissiveIntensity={2} />
           </mesh>
         )}
 
