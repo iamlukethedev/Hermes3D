@@ -226,6 +226,7 @@ import {
   saveGraphicsQuality,
   type GraphicsQuality,
 } from "@/features/retro-office/core/graphicsQuality";
+import { SceneErrorBoundary } from "@/features/retro-office/systems/SceneErrorBoundary";
 import {
   FloorRaycaster as SceneFloorRaycaster,
   GameLoop as SceneGameLoop,
@@ -5236,6 +5237,7 @@ export function RetroOffice3D({
           5. Floor/walls render immediately (no Suspense). Only GLB models are suspended.
         */}
         {!immersiveOverlayActive ? (
+          <SceneErrorBoundary>
           <Canvas
             key={canvasResetKey}
             dpr={[0.85, graphicsQualityConfig.maxDpr]}
@@ -5879,6 +5881,7 @@ export function RetroOffice3D({
               onClick={handleFloorClick}
             />
           </Canvas>
+          </SceneErrorBoundary>
         ) : null}
       </div>
 
