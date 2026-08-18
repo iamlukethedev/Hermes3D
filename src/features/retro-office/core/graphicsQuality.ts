@@ -122,6 +122,43 @@ export const isSoftwareWebGLRenderer = (
   }
 };
 
+let softwareWebGLProbe: boolean | null = null;
+
+/**
+ * Probes a throwaway WebGL context to learn whether the machine rasterizes
+ * in software, BEFORE the main canvas mounts. This lets the initial quality
+ * state start at "low" on such machines instead of downgrading after the
+ * heavy pipeline has already overloaded (and possibly lost) the context.
+ */
+export const detectSoftwareWebGL = (): boolean => {
+  if (typeof document === "undefined") return false;
+  if (softwareWebGLProbe !== null) return softwareWebGLProbe;
+  try {
+    const canvas = document.createElement("canvas");
+    canvas.width = 1;
+    canvas.height = 1;
+    const context =
+      canvas.getContext("webgl2") ??
+      (canvas.getContext("webgl") as WebGLRenderingContext | null);
+    if (!context) {
+      softwareWebGLProbe = true;
+      return true;
+    }
+    softwareWebGLProbe = isSoftwareWebGLRenderer(context);
+    context.getExtension("WEBGL_lose_context")?.loseContext();
+  } catch {
+    softwareWebGLProbe = false;
+  }
+  return softwareWebGLProbe ?? false;
+};
+
+/**
+ * The quality the office should boot with: the user's stored choice, or a
+ * hardware-appropriate default.
+ */
+export const resolveInitialGraphicsQuality = (): GraphicsQuality =>
+  loadStoredGraphicsQuality() ?? (detectSoftwareWebGL() ? "low" : "balanced");
+
 export const saveGraphicsQuality = (quality: GraphicsQuality) => {
   if (typeof window === "undefined") return;
   try {

@@ -201,7 +201,7 @@ async function handleMethod(method, params, id, sendEvent) {
       return resOk(id, { models: MODELS });
 
     case "skills.status":
-      return resOk(id, { skills: [] });
+      return resOk(id, { skills: [{ name: "TASK-MANAGER", status: "installed", version: "1.0.0" }] });
 
     case "cron.list":
       return resOk(id, { jobs: [] });

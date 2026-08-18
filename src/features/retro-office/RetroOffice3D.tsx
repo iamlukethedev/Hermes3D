@@ -221,7 +221,7 @@ import {
 import {
   getGraphicsQualityConfig,
   isSoftwareWebGLRenderer,
-  loadGraphicsQuality,
+  resolveInitialGraphicsQuality,
   loadStoredGraphicsQuality,
   saveGraphicsQuality,
   type GraphicsQuality,
@@ -2665,7 +2665,7 @@ export function RetroOffice3D({
   const [spotlightAgentId, setSpotlightAgentId] = useState<string | null>(null);
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
   const [graphicsQuality, setGraphicsQualityState] = useState<GraphicsQuality>(() =>
-    loadGraphicsQuality(),
+    resolveInitialGraphicsQuality(),
   );
   const graphicsQualityConfig = useMemo(
     () => getGraphicsQualityConfig(graphicsQuality),
@@ -2682,9 +2682,8 @@ export function RetroOffice3D({
       gl.domElement.addEventListener("webglcontextlost", (event) => {
         event.preventDefault();
       });
-      // Software rasterizers (SwiftShader, llvmpipe) cannot keep up with the
-      // full pipeline and may lose the context. Drop to the low preset unless
-      // the user explicitly picked a quality.
+      // Late safety net: if the pre-mount probe missed a software rasterizer
+      // (some browsers only reveal it on the real context), drop to low.
       if (
         loadStoredGraphicsQuality() === null &&
         isSoftwareWebGLRenderer(gl.getContext())
