@@ -317,6 +317,37 @@ const buildCardFromSharedTaskRecord = (
     isInferred: false,
   });
 
+/**
+ * Field-level equality for cards. The store poll rebuilds card objects on
+ * every fetch; without this bail each 4s poll dispatched a state change for
+ * every stored card, keeping the board re-rendering forever.
+ */
+const taskBoardCardsEquivalent = (a: TaskBoardCard, b: TaskBoardCard): boolean =>
+  a.id === b.id &&
+  a.title === b.title &&
+  a.description === b.description &&
+  a.status === b.status &&
+  a.source === b.source &&
+  a.sourceEventId === b.sourceEventId &&
+  a.assignedAgentId === b.assignedAgentId &&
+  a.createdAt === b.createdAt &&
+  a.updatedAt === b.updatedAt &&
+  a.playbookJobId === b.playbookJobId &&
+  a.runId === b.runId &&
+  a.channel === b.channel &&
+  a.externalThreadId === b.externalThreadId &&
+  a.lastActivityAt === b.lastActivityAt &&
+  a.notes.length === b.notes.length &&
+  a.notes.every((note, index) => note === b.notes[index]) &&
+  a.isArchived === b.isArchived &&
+  a.isInferred === b.isInferred &&
+  a.model === b.model &&
+  a.skills.length === b.skills.length &&
+  a.skills.every((skill, index) => skill === b.skills[index]) &&
+  a.subagentCount === b.subagentCount &&
+  a.scheduledFor === b.scheduledFor &&
+  a.learnedSkill === b.learnedSkill;
+
 const cardTextKey = (card: Pick<TaskBoardCard, "title" | "assignedAgentId">) =>
   `${card.assignedAgentId ?? "-"}:${normalizeTaskRequestText(card.title).toLowerCase()}`;
 
@@ -485,9 +516,20 @@ export const syncCardWithLinkedRun = (
         ? "needs_attention"
         : "done";
   const updatedAt = new Date(run.endedAt ?? run.startedAt).toISOString();
+  const assignedAgentId = card.assignedAgentId ?? run.agentId;
+  // Return the same object when nothing changed — downstream effects rely on
+  // reference equality to decide whether to dispatch.
+  if (
+    card.status === status &&
+    card.updatedAt === updatedAt &&
+    card.lastActivityAt === updatedAt &&
+    card.assignedAgentId === assignedAgentId
+  ) {
+    return card;
+  }
   return {
     ...card,
-    assignedAgentId: card.assignedAgentId ?? run.agentId,
+    assignedAgentId,
     status,
     updatedAt,
     lastActivityAt: updatedAt,
@@ -727,6 +769,9 @@ export const useTaskBoardController = ({
       const existing =
         stateRef.current.cards.find((card) => card.id === task.id) ?? null;
       const nextCard = buildCardFromGatewayTask(task, existing);
+      if (existing && taskBoardCardsEquivalent(existing, nextCard)) {
+        return existing;
+      }
       dispatch({ type: "upsert", card: nextCard });
       archiveMatchingInferredCards(nextCard);
       return nextCard;
@@ -739,6 +784,9 @@ export const useTaskBoardController = ({
       const existing =
         stateRef.current.cards.find((card) => card.id === task.id) ?? null;
       const nextCard = buildCardFromSharedTaskRecord(task, existing);
+      if (existing && taskBoardCardsEquivalent(existing, nextCard)) {
+        return existing;
+      }
       dispatch({ type: "upsert", card: nextCard });
       archiveMatchingInferredCards(nextCard);
       return nextCard;

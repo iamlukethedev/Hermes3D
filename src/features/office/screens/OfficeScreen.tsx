@@ -2904,7 +2904,13 @@ export function OfficeScreen({
     enabled: runtimeSupportsSkills,
     agents: state.agents,
   });
-  const animationNowMs = Date.now();
+  // Coarse 500ms clock. A raw Date.now() here gave officeAnimationState (and
+  // every nested hold map) a new identity on EVERY render, so all downstream
+  // effects re-ran per render — any state change could snowball into a
+  // synchronous cascade that tripped React's nested-update limit. Snapping to
+  // a coarse tick keeps the memo referentially stable within a burst while
+  // time-based holds still expire within half a second.
+  const animationNowMs = Math.floor(Date.now() / 500) * 500;
   const officeAnimationState = useMemo(() => {
     const base = buildOfficeAnimationState({
       state: officeTriggerState,

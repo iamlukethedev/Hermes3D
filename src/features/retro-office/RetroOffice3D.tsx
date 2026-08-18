@@ -17,6 +17,7 @@ import {
 import {
   type ComponentProps,
   memo,
+  startTransition,
   Suspense,
   useCallback,
   useEffect,
@@ -2637,16 +2638,12 @@ export function RetroOffice3D({
     () => ({ pos: CAM_POS, target: cameraTarget, zoom: cameraZoom }),
     [CAM_POS, cameraTarget, cameraZoom]
   );
-  const canvasResetKey = useMemo(
-    () =>
-      [
-        remoteOfficeEnabled ? "remote" : "local",
-        gatewayStatus ?? "unknown",
-        String(agents.length),
-        String(officeCenterSignal),
-      ].join(":"),
-    [agents.length, gatewayStatus, officeCenterSignal, remoteOfficeEnabled],
-  );
+  // The canvas remounts only when the world footprint changes (remote office
+  // toggle). Roster size, gateway status, and camera centering are all
+  // handled reactively — remounting the whole GL context for them threw away
+  // compiled shaders and the resulting mount storm could trip React's
+  // nested-update limit ("Maximum update depth exceeded").
+  const canvasResetKey = remoteOfficeEnabled ? "remote" : "local";
   // New Idea 7: heatmap mode.
   const [heatmapMode, setHeatmapMode] = useState(false);
   const [trailMode, setTrailMode] = useState(false);
@@ -2680,11 +2677,15 @@ export function RetroOffice3D({
       });
       // Late safety net: if the pre-mount probe missed a software rasterizer
       // (some browsers only reveal it on the real context), drop to low.
+      // Deferred to the transition lane — onCreated runs during the commit,
+      // and a sync setState there counts toward the nested-update limit.
       if (
         loadStoredGraphicsQuality() === null &&
         isSoftwareWebGLRenderer(gl.getContext())
       ) {
-        setGraphicsQualityState("low");
+        startTransition(() => {
+          setGraphicsQualityState("low");
+        });
       }
     },
     [],
@@ -2830,9 +2831,14 @@ export function RetroOffice3D({
   useEffect(() => {
     const intervalId = window.setInterval(() => {
       const now = Date.now();
-      setJanitorActors((previous) => {
-        const next = pruneExpiredJanitorActors(previous, now);
-        return next.length === previous.length ? previous : next;
+      // Low-priority cosmetic update — keep it off the urgent sync lane so a
+      // tick landing inside a busy render burst (standup kickoff, floor
+      // hydration) cannot trip React's nested-update limit.
+      startTransition(() => {
+        setJanitorActors((previous) => {
+          const next = pruneExpiredJanitorActors(previous, now);
+          return next.length === previous.length ? previous : next;
+        });
       });
     }, 1000);
     return () => {
@@ -2923,8 +2929,13 @@ export function RetroOffice3D({
       });
     };
 
-    syncRenderAgentUi();
-    const timer = window.setInterval(syncRenderAgentUi, 250);
+    // Roster chip state is cosmetic — sync it on the transition lane so the
+    // 250ms tick can never become the update that exceeds React's nested
+    // sync-update limit during an unrelated render burst.
+    startTransition(syncRenderAgentUi);
+    const timer = window.setInterval(() => {
+      startTransition(syncRenderAgentUi);
+    }, 250);
     return () => {
       window.clearInterval(timer);
     };
