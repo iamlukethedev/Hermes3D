@@ -220,7 +220,9 @@ import {
 } from "@/features/retro-office/systems/atmosphere";
 import {
   getGraphicsQualityConfig,
+  isSoftwareWebGLRenderer,
   loadGraphicsQuality,
+  loadStoredGraphicsQuality,
   saveGraphicsQuality,
   type GraphicsQuality,
 } from "@/features/retro-office/core/graphicsQuality";
@@ -2672,6 +2674,25 @@ export function RetroOffice3D({
     setGraphicsQualityState(quality);
     saveGraphicsQuality(quality);
   }, []);
+  const handleCanvasCreated = useCallback(
+    ({ gl }: { gl: THREE.WebGLRenderer }) => {
+      // Allow the browser to restore a lost context instead of killing the
+      // canvas — three re-uploads all GPU resources on restore.
+      gl.domElement.addEventListener("webglcontextlost", (event) => {
+        event.preventDefault();
+      });
+      // Software rasterizers (SwiftShader, llvmpipe) cannot keep up with the
+      // full pipeline and may lose the context. Drop to the low preset unless
+      // the user explicitly picked a quality.
+      if (
+        loadStoredGraphicsQuality() === null &&
+        isSoftwareWebGLRenderer(gl.getContext())
+      ) {
+        setGraphicsQualityState("low");
+      }
+    },
+    [],
+  );
   const followFocusPointRef = useRef(new THREE.Vector3());
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const orbitRef = useRef<any>(null);
@@ -2886,7 +2907,24 @@ export function RetroOffice3D({
           status: agent.status,
         };
       }
-      setRenderAgentUiById(next);
+      // Keep the previous object when nothing changed so idle frames do not
+      // trigger a React re-render every sync tick.
+      setRenderAgentUiById((previous) => {
+        const previousIds = Object.keys(previous);
+        if (previousIds.length === Object.keys(next).length) {
+          let identical = true;
+          for (const id of previousIds) {
+            const before = previous[id];
+            const after = next[id];
+            if (!after || before.state !== after.state || before.status !== after.status) {
+              identical = false;
+              break;
+            }
+          }
+          if (identical) return previous;
+        }
+        return next;
+      });
     };
 
     syncRenderAgentUi();
@@ -5215,6 +5253,7 @@ export function RetroOffice3D({
               toneMappingExposure: 1.0,
             }}
             style={{ width: "100%", height: "100%" }}
+            onCreated={handleCanvasCreated}
             onPointerUp={() => {
               if (drag.kind === "moving") setDrag({ kind: "idle" });
             }}

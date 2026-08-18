@@ -86,15 +86,40 @@ export const getGraphicsQualityConfig = (
 export const isGraphicsQuality = (value: unknown): value is GraphicsQuality =>
   value === "low" || value === "balanced" || value === "ultra";
 
-export const loadGraphicsQuality = (): GraphicsQuality => {
-  if (typeof window === "undefined") return "balanced";
+/** The explicit user choice, or null when the user never picked one. */
+export const loadStoredGraphicsQuality = (): GraphicsQuality | null => {
+  if (typeof window === "undefined") return null;
   try {
     const stored = window.localStorage.getItem(GRAPHICS_QUALITY_STORAGE_KEY);
     if (isGraphicsQuality(stored)) return stored;
   } catch {
     // Storage unavailable (private mode, etc.) — fall through to default.
   }
-  return "balanced";
+  return null;
+};
+
+export const loadGraphicsQuality = (): GraphicsQuality =>
+  loadStoredGraphicsQuality() ?? "balanced";
+
+/**
+ * True when WebGL runs on a CPU rasterizer (SwiftShader, llvmpipe, …).
+ * Software renderers cannot keep up with the full pipeline and may lose
+ * the GL context, so callers should drop to the "low" preset.
+ */
+export const isSoftwareWebGLRenderer = (
+  context: WebGLRenderingContext | WebGL2RenderingContext,
+): boolean => {
+  try {
+    const debugInfo = context.getExtension("WEBGL_debug_renderer_info");
+    const renderer = String(
+      debugInfo
+        ? context.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL)
+        : context.getParameter(context.RENDERER),
+    );
+    return /swiftshader|llvmpipe|softpipe|software|basic render/i.test(renderer);
+  } catch {
+    return false;
+  }
 };
 
 export const saveGraphicsQuality = (quality: GraphicsQuality) => {
