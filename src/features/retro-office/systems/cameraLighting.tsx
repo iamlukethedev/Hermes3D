@@ -3,7 +3,6 @@
 import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useRef, type MutableRefObject, type RefObject } from "react";
 import * as THREE from "three";
-import { WORLD_H, WORLD_W } from "@/features/retro-office/core/constants";
 import {
   DISTRICT_CAMERA_POSITION,
   DISTRICT_CAMERA_TARGET,
@@ -11,6 +10,55 @@ import {
 } from "@/features/retro-office/core/district";
 import { toWorld } from "@/features/retro-office/core/geometry";
 import type { RenderAgent } from "@/features/retro-office/core/types";
+
+/** Vertical field of view for the cinematic overview camera. */
+export const SCENE_CAMERA_FOV = 40;
+
+/** Field of view for the third-person follow camera. */
+export const FOLLOW_CAMERA_FOV = 58;
+
+/**
+ * Reference viewport height used when converting legacy orthographic zoom
+ * values into perspective camera distances before the real size is known.
+ */
+const REFERENCE_VIEWPORT_HEIGHT = 900;
+
+/**
+ * Camera presets still carry the legacy orthographic `zoom` (pixels per world
+ * unit). For the perspective camera we convert it into a distance that frames
+ * the same world-space height at the preset target, so every existing fly-to
+ * preset keeps its intended framing.
+ */
+export const orthoZoomToDistance = (
+  zoom: number,
+  viewportHeight: number = REFERENCE_VIEWPORT_HEIGHT,
+  fovDegrees: number = SCENE_CAMERA_FOV,
+) => {
+  const visibleHeight = viewportHeight / zoom;
+  return visibleHeight / (2 * Math.tan(THREE.MathUtils.degToRad(fovDegrees / 2)));
+};
+
+const DEFAULT_VIEW_DIRECTION = new THREE.Vector3(
+  DISTRICT_CAMERA_POSITION[0] - DISTRICT_CAMERA_TARGET[0],
+  DISTRICT_CAMERA_POSITION[1] - DISTRICT_CAMERA_TARGET[1],
+  DISTRICT_CAMERA_POSITION[2] - DISTRICT_CAMERA_TARGET[2],
+).normalize();
+
+/**
+ * Computes the overview camera position for a target point and a legacy
+ * orthographic zoom, along the canonical isometric view direction.
+ */
+export const computeOverviewCameraPosition = (
+  target: [number, number, number],
+  zoom: number,
+): [number, number, number] => {
+  const distance = orthoZoomToDistance(zoom);
+  return [
+    target[0] + DEFAULT_VIEW_DIRECTION.x * distance,
+    target[1] + DEFAULT_VIEW_DIRECTION.y * distance,
+    target[2] + DEFAULT_VIEW_DIRECTION.z * distance,
+  ];
+};
 
 export type CameraPreset = {
   pos: [number, number, number];
@@ -48,42 +96,43 @@ export function CameraAnimator({
   presetRef: MutableRefObject<CameraPreset | null>;
   orbitRef: RefObject<OrbitControllerLike | null>;
 }) {
-  const { camera } = useThree();
-  const activePerspectiveCameraRef = useRef<THREE.PerspectiveCamera | null>(
-    camera instanceof THREE.PerspectiveCamera ? camera : null,
-  );
+  const { camera, size } = useThree();
   const targetPositionRef = useRef(new THREE.Vector3());
   const targetLookAtRef = useRef(new THREE.Vector3());
-
-  useEffect(() => {
-    if (camera instanceof THREE.PerspectiveCamera) {
-      activePerspectiveCameraRef.current = camera;
-    }
-  }, [camera]);
+  const directionRef = useRef(new THREE.Vector3());
 
   useFrame(() => {
     const preset = presetRef.current;
     const orbit = orbitRef.current;
     if (!preset || !orbit) return;
-    const activeCamera = activePerspectiveCameraRef.current;
 
-    targetPositionRef.current.set(...preset.pos);
     targetLookAtRef.current.set(...preset.target);
-    camera.position.lerp(targetPositionRef.current, 0.06);
-    orbit.target.lerp(targetLookAtRef.current, 0.06);
+    targetPositionRef.current.set(...preset.pos);
 
-    if (activeCamera && typeof preset.zoom === "number") {
-      activeCamera.zoom += (preset.zoom - activeCamera.zoom) * 0.08;
-      activeCamera.updateProjectionMatrix();
+    if (typeof preset.zoom === "number" && preset.zoom > 0) {
+      // Re-project the preset position so the perspective camera frames the
+      // same world height the old orthographic zoom described.
+      directionRef.current
+        .copy(targetPositionRef.current)
+        .sub(targetLookAtRef.current);
+      if (directionRef.current.lengthSq() < 1e-6) {
+        directionRef.current.copy(DEFAULT_VIEW_DIRECTION);
+      } else {
+        directionRef.current.normalize();
+      }
+      const fov =
+        camera instanceof THREE.PerspectiveCamera ? camera.fov : SCENE_CAMERA_FOV;
+      const distance = orthoZoomToDistance(preset.zoom, size.height, fov);
+      targetPositionRef.current
+        .copy(targetLookAtRef.current)
+        .addScaledVector(directionRef.current, distance);
     }
 
+    camera.position.lerp(targetPositionRef.current, 0.06);
+    orbit.target.lerp(targetLookAtRef.current, 0.06);
     orbit.update();
-    const zoomSettled =
-      !activeCamera ||
-      typeof preset.zoom !== "number" ||
-      Math.abs(activeCamera.zoom - preset.zoom) < 0.5;
 
-    if (camera.position.distanceTo(targetPositionRef.current) < 0.05 && zoomSettled) {
+    if (camera.position.distanceTo(targetPositionRef.current) < 0.05) {
       presetRef.current = null;
     }
   });
@@ -95,10 +144,13 @@ export function FollowCamController({
   followRef,
   agentsRef,
   agentLookupRef,
+  focusPointRef,
 }: {
   followRef: MutableRefObject<string | null>;
   agentsRef: RefObject<RenderAgent[]>;
   agentLookupRef?: RefObject<Map<string, RenderAgent>>;
+  /** Optional out-param: receives the followed agent's world-space focus point. */
+  focusPointRef?: MutableRefObject<THREE.Vector3>;
 }) {
   const { camera, set, size, gl } = useThree();
   const perspectiveCameraRef = useRef<THREE.PerspectiveCamera | null>(null);
@@ -116,7 +168,7 @@ export function FollowCamController({
   const lookAtRef = useRef(new THREE.Vector3());
 
   useEffect(() => {
-    if (camera instanceof THREE.PerspectiveCamera) {
+    if (camera instanceof THREE.PerspectiveCamera && !wasFollowingRef.current) {
       originalCameraRef.current = camera;
     }
   }, [camera]);
@@ -179,10 +231,10 @@ export function FollowCamController({
 
       if (!perspectiveCameraRef.current) {
         perspectiveCameraRef.current = new THREE.PerspectiveCamera(
-          65,
+          FOLLOW_CAMERA_FOV,
           size.width / size.height,
           0.1,
-          100,
+          300,
         );
       }
 
@@ -225,145 +277,11 @@ export function FollowCamController({
     perspectiveCameraRef.current.position.copy(cameraPositionRef.current);
 
     lookAtRef.current.set(wx, 0.5, wz);
+    if (focusPointRef) focusPointRef.current.copy(lookAtRef.current);
     perspectiveCameraRef.current.lookAt(lookAtRef.current);
     perspectiveCameraRef.current.aspect = size.width / size.height;
     perspectiveCameraRef.current.updateProjectionMatrix();
   });
 
   return null;
-}
-
-const DAY_NIGHT_PERIOD = 300;
-
-const DAY_NIGHT_POSITIONS = [0, 0.2, 0.45, 0.65, 0.8, 0.95];
-
-const DAY_NIGHT_KEYFRAMES = [
-  {
-    ambient: "#c8a870",
-    sun: "#ffe8b0",
-    sunIntensity: 0.8,
-    ambientIntensity: 0.55,
-  },
-  {
-    ambient: "#c8d0e0",
-    sun: "#f0f4ff",
-    sunIntensity: 1.3,
-    ambientIntensity: 0.75,
-  },
-  {
-    ambient: "#c8d0e0",
-    sun: "#f0f4ff",
-    sunIntensity: 1.3,
-    ambientIntensity: 0.75,
-  },
-  {
-    ambient: "#c87840",
-    sun: "#ff9050",
-    sunIntensity: 0.9,
-    ambientIntensity: 0.5,
-  },
-  {
-    ambient: "#1a2040",
-    sun: "#2040a0",
-    sunIntensity: 0.3,
-    ambientIntensity: 0.25,
-  },
-  {
-    ambient: "#101828",
-    sun: "#182038",
-    sunIntensity: 0.2,
-    ambientIntensity: 0.2,
-  },
-];
-
-const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
-
-const lerpColor = (fromColor: string, toColor: string, t: number) => {
-  const parse = (color: string) => {
-    const value = parseInt(color.slice(1), 16);
-    return [(value >> 16) & 0xff, (value >> 8) & 0xff, value & 0xff];
-  };
-
-  const [fromR, fromG, fromB] = parse(fromColor);
-  const [toR, toG, toB] = parse(toColor);
-  const red = Math.round(lerp(fromR, toR, t));
-  const green = Math.round(lerp(fromG, toG, t));
-  const blue = Math.round(lerp(fromB, toB, t));
-
-  return `rgb(${red},${green},${blue})`;
-};
-
-export function DayNightCycle({
-  externalTimeRef,
-}: {
-  externalTimeRef?: MutableRefObject<number>;
-}) {
-  const ambientRef = useRef<THREE.AmbientLight>(null);
-  const sunRef = useRef<THREE.DirectionalLight>(null);
-  const timeRef = useRef(0.25);
-
-  useFrame((_, delta) => {
-    timeRef.current = (timeRef.current + delta / DAY_NIGHT_PERIOD) % 1;
-    if (externalTimeRef) externalTimeRef.current = timeRef.current;
-    const time = timeRef.current;
-
-    let indexA = 0;
-    for (let index = 0; index < DAY_NIGHT_POSITIONS.length - 1; index += 1) {
-      if (time >= DAY_NIGHT_POSITIONS[index] && time < DAY_NIGHT_POSITIONS[index + 1]) {
-        indexA = index;
-        break;
-      }
-      if (time >= DAY_NIGHT_POSITIONS[DAY_NIGHT_POSITIONS.length - 1]) {
-        indexA = DAY_NIGHT_POSITIONS.length - 1;
-      }
-    }
-
-    const indexB = (indexA + 1) % DAY_NIGHT_KEYFRAMES.length;
-    const positionA = DAY_NIGHT_POSITIONS[indexA];
-    const positionB = indexB === 0 ? 1 : DAY_NIGHT_POSITIONS[indexB];
-    const span = positionB - positionA;
-    const localT = span > 0 ? (time - positionA) / span : 0;
-    const keyframeA = DAY_NIGHT_KEYFRAMES[indexA];
-    const keyframeB = DAY_NIGHT_KEYFRAMES[indexB];
-
-    if (ambientRef.current) {
-      ambientRef.current.color.set(
-        lerpColor(keyframeA.ambient, keyframeB.ambient, localT),
-      );
-      ambientRef.current.intensity = lerp(
-        keyframeA.ambientIntensity,
-        keyframeB.ambientIntensity,
-        localT,
-      );
-    }
-
-    if (sunRef.current) {
-      sunRef.current.color.set(lerpColor(keyframeA.sun, keyframeB.sun, localT));
-      sunRef.current.intensity = lerp(
-        keyframeA.sunIntensity,
-        keyframeB.sunIntensity,
-        localT,
-      );
-    }
-  });
-
-  return (
-    <>
-      <ambientLight ref={ambientRef} intensity={0.75} color="#c8d0e0" />
-      <directionalLight
-        ref={sunRef}
-        position={[8, 14, 6]}
-        intensity={1.3}
-        color="#f0f4ff"
-        castShadow
-        shadow-mapSize={[1024, 1024]}
-        shadow-bias={-0.0002}
-        shadow-normalBias={0.02}
-        shadow-camera-left={-WORLD_W * 0.7}
-        shadow-camera-right={WORLD_W * 0.7}
-        shadow-camera-top={WORLD_H * 0.7}
-        shadow-camera-bottom={-WORLD_H * 0.7}
-      />
-    </>
-  );
 }

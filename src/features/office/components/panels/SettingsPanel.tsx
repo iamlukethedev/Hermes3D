@@ -3,6 +3,10 @@
 import { useState } from "react";
 import { CURATED_ELEVENLABS_VOICES } from "@/lib/voiceReply/catalog";
 import type { StudioGatewayAdapterType } from "@/lib/studio/settings";
+import {
+  GRAPHICS_QUALITY_OPTIONS,
+  type GraphicsQuality,
+} from "@/features/retro-office/core/graphicsQuality";
 
 type SettingsPanelProps = {
   gatewayStatus?: string;
@@ -39,6 +43,8 @@ type SettingsPanelProps = {
   onVoiceRepliesVoiceChange: (voiceId: string | null) => void;
   onVoiceRepliesSpeedChange: (speed: number) => void;
   onVoiceRepliesPreview: (voiceId: string | null, voiceName: string) => void;
+  graphicsQuality?: GraphicsQuality;
+  onGraphicsQualityChange?: (quality: GraphicsQuality) => void;
 };
 
 export function SettingsPanel({
@@ -76,6 +82,8 @@ export function SettingsPanel({
   onVoiceRepliesVoiceChange,
   onVoiceRepliesSpeedChange,
   onVoiceRepliesPreview,
+  graphicsQuality,
+  onGraphicsQualityChange,
 }: SettingsPanelProps) {
   const normalizedGatewayUrl = gatewayUrl?.trim() ?? "";
   const normalizedGatewayToken = gatewayToken ?? "";
@@ -425,6 +433,36 @@ export function SettingsPanel({
           </button>
         </div>
       </div>
+      {graphicsQuality && onGraphicsQualityChange ? (
+        <div className="mt-3 rounded-lg border border-cyan-500/10 bg-black/20 px-4 py-3">
+          <div className="text-[11px] font-medium text-white">Graphics quality</div>
+          <div className="mt-1 text-[10px] text-white/75">
+            Balance visual fidelity against performance in the 3D office.
+          </div>
+          <div className="mt-3 grid gap-2">
+            {GRAPHICS_QUALITY_OPTIONS.map((option) => {
+              const selected = option.id === graphicsQuality;
+              return (
+                <button
+                  key={option.id}
+                  type="button"
+                  onClick={() => onGraphicsQualityChange(option.id)}
+                  className={`rounded-lg border px-3 py-2 text-left transition-colors ${
+                    selected
+                      ? "border-cyan-400/40 bg-cyan-500/12 text-white"
+                      : "border-cyan-500/10 bg-black/15 text-white/80 hover:border-cyan-400/20 hover:bg-cyan-500/6"
+                  }`}
+                >
+                  <div className="text-[11px] font-medium">{option.label}</div>
+                  <div className="mt-1 text-[10px] text-white/65">
+                    {option.description}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
       <div className="ui-settings-row mt-3 flex min-h-[72px] items-center justify-between gap-6 rounded-lg border border-cyan-500/10 bg-black/20 px-4 py-3">
         <div className="flex items-center gap-3">
           <button
