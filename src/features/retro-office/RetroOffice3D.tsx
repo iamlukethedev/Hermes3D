@@ -5207,7 +5207,7 @@ export function RetroOffice3D({
               near: 0.3,
               far: 320,
             }}
-            shadows={{ type: THREE.PCFSoftShadowMap }}
+            shadows={{ type: THREE.PCFShadowMap }}
             gl={{
               antialias: true,
               powerPreference: "high-performance",

@@ -92,7 +92,7 @@ export function SceneAtmosphere({ config }: { config: GraphicsQualityConfig }) {
       {/* Sky/ground bounce fill. */}
       <hemisphereLight args={["#cfe0f4", "#8a6b4d", 0.5]} />
 
-      {/* Warm key sun with tight, high-resolution shadows. */}
+      {/* Warm key sun with tight, high-resolution soft shadows. */}
       <directionalLight
         ref={sunRef}
         position={SUN_BASE_POSITION.toArray()}
@@ -102,6 +102,7 @@ export function SceneAtmosphere({ config }: { config: GraphicsQualityConfig }) {
         shadow-mapSize={[config.shadowMapSize, config.shadowMapSize]}
         shadow-bias={-0.00015}
         shadow-normalBias={0.025}
+        shadow-radius={4}
         shadow-camera-left={-SHADOW_EXTENT}
         shadow-camera-right={SHADOW_EXTENT}
         shadow-camera-top={SHADOW_EXTENT}
@@ -112,6 +113,13 @@ export function SceneAtmosphere({ config }: { config: GraphicsQualityConfig }) {
 
       {/* Cool sky fill from the opposite side — lifts shadowed faces. */}
       <directionalLight position={[-14, 12, -10]} intensity={0.55} color="#a7c4ef" />
+
+      {/* Vast ground plane so the office sits on land instead of floating in
+          the sky — the fog fades it into the horizon. */}
+      <mesh position={[0, -0.06, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+        <circleGeometry args={[420, 48]} />
+        <meshStandardMaterial color="#4d5a4a" roughness={1} metalness={0} />
+      </mesh>
 
       <DaylightDrift sunRef={sunRef} />
     </>
