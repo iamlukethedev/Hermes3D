@@ -2976,13 +2976,25 @@ export function OfficeScreen({
 
   useEffect(() => {
     const now = Date.now();
+    // Snapshot the hold transition BEFORE calling setState. Mutating the ref
+    // inside the updater broke under StrictMode's double-invocation: the
+    // first invocation consumed the "left the gym" transition, the second
+    // disagreed, and consecutive renders flip-flopped the cooldown state
+    // forever (maximum update depth exceeded).
+    const previousHolds = prevImmediateGymHoldRef.current;
+    const currentHolds = Object.fromEntries(
+      state.agents.map((agent) => [
+        agent.agentId,
+        Boolean(immediateGymHoldByAgentId[agent.agentId]),
+      ]),
+    );
+    prevImmediateGymHoldRef.current = currentHolds;
     setGymCooldownUntilByAgentId((previous) => {
       const next: Record<string, number> = {};
       for (const agent of state.agents) {
         const agentId = agent.agentId;
-        const immediateHeld = Boolean(immediateGymHoldByAgentId[agentId]);
-        const wasImmediateHeld =
-          prevImmediateGymHoldRef.current[agentId] ?? false;
+        const immediateHeld = currentHolds[agentId] ?? false;
+        const wasImmediateHeld = previousHolds[agentId] ?? false;
         const previousUntil = previous[agentId] ?? 0;
         if (immediateHeld) {
           if (previousUntil > now) {
@@ -2998,12 +3010,6 @@ export function OfficeScreen({
           next[agentId] = previousUntil;
         }
       }
-      prevImmediateGymHoldRef.current = Object.fromEntries(
-        state.agents.map((agent) => [
-          agent.agentId,
-          Boolean(immediateGymHoldByAgentId[agent.agentId]),
-        ]),
-      );
       const prevKeys = Object.keys(previous);
       const nextKeys = Object.keys(next);
       if (
