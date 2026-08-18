@@ -11,7 +11,7 @@ const createCard = (overrides: Partial<TaskBoardCard> = {}): TaskBoardCard => ({
   id: "task-1",
   title: "New task",
   description: "",
-  status: "todo",
+  status: "inbox",
   source: "hermes3d_manual",
   sourceEventId: null,
   assignedAgentId: null,
@@ -25,6 +25,11 @@ const createCard = (overrides: Partial<TaskBoardCard> = {}): TaskBoardCard => ({
   notes: [],
   isArchived: false,
   isInferred: false,
+  model: null,
+  skills: [],
+  subagentCount: 0,
+  scheduledFor: null,
+  learnedSkill: false,
   ...overrides,
 });
 
@@ -92,10 +97,10 @@ describe("TaskBoardView", () => {
         subtitle: "Track tasks.",
         agents: [createAgent()],
         cardsByStatus: {
-          todo: [selectedCard],
-          in_progress: [],
-          blocked: [],
-          review: [],
+          inbox: [selectedCard],
+          scheduled: [],
+          working: [],
+          needs_attention: [],
           done: [],
         },
         selectedCard,
@@ -119,7 +124,7 @@ describe("TaskBoardView", () => {
       target: { value: "Create marketing website" },
     });
     fireEvent.change(screen.getByLabelText("Status"), {
-      target: { value: "in_progress" },
+      target: { value: "working" },
     });
     fireEvent.change(screen.getByLabelText("Assigned agent"), {
       target: { value: "agent-1" },
@@ -130,7 +135,7 @@ describe("TaskBoardView", () => {
     expect(onRefreshCronJobs).toHaveBeenCalledTimes(1);
     expect(onSelectCard).toHaveBeenCalledWith(null);
     expect(onUpdateCard).toHaveBeenCalledWith("task-1", { title: "Create marketing website" });
-    expect(onMoveCard).toHaveBeenCalledWith("task-1", "in_progress");
+    expect(onMoveCard).toHaveBeenCalledWith("task-1", "working");
     expect(onUpdateCard).toHaveBeenCalledWith("task-1", { assignedAgentId: "agent-1" });
     expect(onDeleteCard).toHaveBeenCalledWith("task-1");
   });

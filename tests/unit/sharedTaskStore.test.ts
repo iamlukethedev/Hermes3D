@@ -33,7 +33,7 @@ describe("shared task store", () => {
       id: "task-1",
       title: "Research mtulsa.com",
       description: "Check site positioning.",
-      status: "todo",
+      status: "inbox",
       source: "hermes3d_manual",
     });
 
@@ -41,7 +41,7 @@ describe("shared task store", () => {
     expect(created.history[0]).toEqual(
       expect.objectContaining({
         type: "created",
-        toStatus: "todo",
+        toStatus: "inbox",
       })
     );
 
@@ -58,13 +58,13 @@ describe("shared task store", () => {
     upsertSharedTask({
       id: "task-1",
       title: "Research mtulsa.com",
-      status: "todo",
+      status: "inbox",
       source: "hermes3d_manual",
     });
     const updated = upsertSharedTask({
       id: "task-1",
       title: "Research mtulsa.com",
-      status: "in_progress",
+      status: "working",
       source: "hermes3d_manual",
     });
     const archived = archiveSharedTask("task-1");
@@ -78,14 +78,14 @@ describe("shared task store", () => {
     tempDir = makeTempDir("shared-task-store-corrupt");
     process.env.HERMES_STATE_DIR = tempDir;
 
-    upsertSharedTask({ id: "t-1", title: "Valid task", status: "todo", source: "hermes3d_manual" });
+    upsertSharedTask({ id: "t-1", title: "Valid task", status: "inbox", source: "hermes3d_manual" });
     const storePath = resolveSharedTaskStorePath();
     fs.writeFileSync(storePath, "{invalid json!!!", "utf8");
 
     const tasks = listSharedTasks();
     expect(tasks).toEqual([]);
 
-    const afterCorrupt = upsertSharedTask({ id: "t-2", title: "After recovery", status: "todo", source: "hermes3d_manual" });
+    const afterCorrupt = upsertSharedTask({ id: "t-2", title: "After recovery", status: "inbox", source: "hermes3d_manual" });
     expect(afterCorrupt.id).toBe("t-2");
     expect(listSharedTasks()).toHaveLength(1);
   });
@@ -94,7 +94,7 @@ describe("shared task store", () => {
     tempDir = makeTempDir("shared-task-store-atomic");
     process.env.HERMES_STATE_DIR = tempDir;
 
-    upsertSharedTask({ id: "t-1", title: "Safe task", status: "todo", source: "hermes3d_manual" });
+    upsertSharedTask({ id: "t-1", title: "Safe task", status: "inbox", source: "hermes3d_manual" });
     const storePath = resolveSharedTaskStorePath();
     const original = fs.readFileSync(storePath, "utf8");
 
@@ -114,8 +114,55 @@ describe("shared task store", () => {
       status: "banana" as never,
       source: "alien" as never,
     });
-    expect(task.status).toBe("todo");
+    expect(task.status).toBe("inbox");
     expect(task.source).toBe("hermes3d_manual");
+  });
+
+  it("normalizes legacy statuses onto the Hermes lifecycle", () => {
+    tempDir = makeTempDir("shared-task-store-legacy");
+    process.env.HERMES_STATE_DIR = tempDir;
+
+    const legacy = upsertSharedTask({
+      id: "t-legacy",
+      title: "Legacy card",
+      status: "in_progress" as never,
+      source: "hermes3d_manual",
+    });
+    expect(legacy.status).toBe("working");
+
+    const blocked = upsertSharedTask({
+      id: "t-legacy",
+      title: "Legacy card",
+      status: "blocked" as never,
+    });
+    expect(blocked.status).toBe("needs_attention");
+  });
+
+  it("persists Hermes agent metadata fields", () => {
+    tempDir = makeTempDir("shared-task-store-hermes-meta");
+    process.env.HERMES_STATE_DIR = tempDir;
+
+    const task = upsertSharedTask({
+      id: "t-meta",
+      title: "Nightly backup",
+      status: "scheduled",
+      source: "playbook",
+      model: "hermes-4-405b",
+      skills: ["backup-runner", " dedupe "],
+      subagentCount: 3,
+      scheduledFor: "2026-08-19T02:00:00.000Z",
+      learnedSkill: true,
+    });
+
+    expect(task.model).toBe("hermes-4-405b");
+    expect(task.skills).toEqual(["backup-runner", "dedupe"]);
+    expect(task.subagentCount).toBe(3);
+    expect(task.scheduledFor).toBe("2026-08-19T02:00:00.000Z");
+    expect(task.learnedSkill).toBe(true);
+
+    const stored = listSharedTasks();
+    expect(stored[0]?.model).toBe("hermes-4-405b");
+    expect(stored[0]?.learnedSkill).toBe(true);
   });
 
   it("truncates oversized title and description", () => {
@@ -128,7 +175,7 @@ describe("shared task store", () => {
       id: "t-long",
       title: longTitle,
       description: longDesc,
-      status: "todo",
+      status: "inbox",
       source: "hermes3d_manual",
     });
 

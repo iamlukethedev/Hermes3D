@@ -21,7 +21,7 @@ test("creates and edits a kanban card from HQ", async ({ page }) => {
   await expect(titleInput).toHaveValue("New task");
   await titleInput.fill("Create marketing website");
   await page.getByLabel("Description").fill("Landing page for the spring campaign.");
-  await page.getByLabel("Status").selectOption("in_progress");
+  await page.getByLabel("Status").selectOption("working");
 
   await expect(page.getByText("Create marketing website")).toBeVisible();
   await expect(titleInput).toHaveValue("Create marketing website");

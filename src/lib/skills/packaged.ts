@@ -189,10 +189,10 @@ Always treat that file as the shared source of truth for the Kanban board.
 1. Read the task file before handling an actionable request.
 2. If the file does not exist, create it with the schema in this document.
 3. If the latest user message is actionable and no matching active task exists, create one immediately.
-4. Before starting execution, ensure the task is \`todo\` or move it to \`in_progress\`.
-5. If work cannot continue, set the task to \`blocked\` and record a short reason in \`notes\`.
+4. Before starting execution, move the task from \`inbox\` to \`working\`.
+5. If work is blocked on a human (command approval, missing input, credentials, or an error), set the task to \`needs_attention\` and record a short reason in \`notes\`.
 6. When work is finished, set the task to \`done\`.
-7. When work needs user review or confirmation, set the task to \`review\`.
+7. When a task is queued by the cron scheduler or a playbook for a later run, keep it in \`scheduled\` and set \`scheduledFor\`.
 8. After every mutation, write the full updated JSON back to disk.
 
 ## Matching rules
@@ -222,15 +222,32 @@ Each task must include:
 - \`notes\`
 - \`isArchived\`
 - \`isInferred\`
+- \`model\`
+- \`skills\`
+- \`subagentCount\`
+- \`scheduledFor\`
+- \`learnedSkill\`
 - \`history\`
+
+Hermes metadata fields:
+
+- \`model\` — the LLM used for the task (for example \`hermes-4-405b\`), or \`null\`.
+- \`skills\` — names of skills used or created while working the task.
+- \`subagentCount\` — number of isolated subagents spawned for parallel work.
+- \`scheduledFor\` — ISO timestamp when a \`scheduled\` task is due, or \`null\`.
+- \`learnedSkill\` — \`true\` when the learning loop distilled this task into a new skill.
 
 ## Status rules
 
-- New actionable requests start as \`todo\` unless work has already begun.
-- Move to \`in_progress\` when the agent is actively working.
-- Move to \`blocked\` when progress depends on missing input, credentials, approvals, or failures.
-- Move to \`review\` when the work is ready for inspection or handoff.
-- Move to \`done\` only when the requested work is complete.
+The board mirrors the Hermes agent lifecycle:
+
+- \`inbox\` — new actionable requests captured from any platform (Telegram, Discord, Slack, WhatsApp, Signal, email, CLI). Record the platform in \`channel\`.
+- \`scheduled\` — queued for a later run by the cron scheduler or a playbook. Set \`scheduledFor\`.
+- \`working\` — the agent is actively executing tools, terminals, or subagents.
+- \`needs_attention\` — blocked on a human: a command approval, a question, missing credentials, or an error that needs review.
+- \`done\` — the requested work is complete. Set \`learnedSkill\` to \`true\` if a new skill was created from this task.
+
+Legacy statuses (\`todo\`, \`in_progress\`, \`blocked\`, \`review\`) are still accepted and map to \`inbox\`, \`working\`, \`needs_attention\`, and \`needs_attention\` respectively.
 
 ## File format
 
@@ -243,7 +260,7 @@ Each task must include:
       "id": "research-mtulsa-com",
       "title": "Research mtulsa.com",
       "description": "Review mtulsa.com and summarize the site, positioning, and improvement opportunities.",
-      "status": "in_progress",
+      "status": "working",
       "source": "hermes3d_manual",
       "sourceEventId": null,
       "assignedAgentId": "main",
@@ -257,20 +274,25 @@ Each task must include:
       "notes": [],
       "isArchived": false,
       "isInferred": false,
+      "model": "hermes-4-405b",
+      "skills": ["web-research"],
+      "subagentCount": 0,
+      "scheduledFor": null,
+      "learnedSkill": false,
       "history": [
         {
           "at": "2026-03-30T00:00:00.000Z",
           "type": "created",
           "note": "Task created.",
           "fromStatus": null,
-          "toStatus": "todo"
+          "toStatus": "inbox"
         },
         {
           "at": "2026-03-30T00:10:00.000Z",
           "type": "status_changed",
           "note": null,
-          "fromStatus": "todo",
-          "toStatus": "in_progress"
+          "fromStatus": "inbox",
+          "toStatus": "working"
         }
       ]
     }
@@ -294,7 +316,7 @@ const TASK_MANAGER_EXAMPLE_JSON = `{
       "id": "research-mtulsa-com",
       "title": "Research mtulsa.com",
       "description": "Review mtulsa.com and summarize the site, positioning, and improvement opportunities.",
-      "status": "in_progress",
+      "status": "working",
       "source": "hermes3d_manual",
       "sourceEventId": null,
       "assignedAgentId": "main",
@@ -314,16 +336,23 @@ const TASK_MANAGER_EXAMPLE_JSON = `{
           "type": "created",
           "note": "Task created.",
           "fromStatus": null,
-          "toStatus": "todo"
+          "toStatus": "inbox"
         },
         {
           "at": "2026-03-30T00:10:00.000Z",
           "type": "status_changed",
           "note": null,
-          "fromStatus": "todo",
-          "toStatus": "in_progress"
+          "fromStatus": "inbox",
+          "toStatus": "working"
         }
-      ]
+      ],
+      "model": "hermes-4-405b",
+      "skills": [
+        "web-research"
+      ],
+      "subagentCount": 0,
+      "scheduledFor": null,
+      "learnedSkill": false
     }
   ]
 }

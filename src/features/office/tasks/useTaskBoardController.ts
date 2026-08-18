@@ -16,7 +16,7 @@ import {
 } from "@/features/office/tasks/taskBoardState";
 import {
   defaultTaskBoardPreference,
-  isTaskBoardStatus,
+  normalizeTaskBoardStatus,
   type TaskBoardCard,
   type TaskBoardExplicitEvent,
   type TaskBoardSource,
@@ -151,7 +151,7 @@ const makeCard = (
     id: input.id,
     title: input.title.trim() || "Untitled task",
     description: input.description?.trim() ?? "",
-    status: input.status ?? "todo",
+    status: input.status ?? "inbox",
     source: input.source ?? "hermes3d_manual",
     sourceEventId: input.sourceEventId ?? null,
     assignedAgentId: input.assignedAgentId ?? null,
@@ -165,6 +165,11 @@ const makeCard = (
     notes: input.notes ? [...input.notes] : [],
     isArchived: input.isArchived ?? false,
     isInferred: input.isInferred ?? false,
+    model: input.model ?? null,
+    skills: input.skills ? [...input.skills] : [],
+    subagentCount: input.subagentCount ?? 0,
+    scheduledFor: input.scheduledFor ?? null,
+    learnedSkill: input.learnedSkill ?? false,
   };
 };
 
@@ -199,7 +204,7 @@ export const parseExplicitTaskEvent = (
     taskId,
     title: trimOrNull(payload.title) ?? trimOrNull(payload.name),
     description: trimOrNull(payload.description) ?? trimOrNull(payload.text),
-    status: isTaskBoardStatus(payload.status) ? payload.status : null,
+    status: normalizeTaskBoardStatus(payload.status),
     assignedAgentId:
       trimOrNull(payload.assignedAgentId) ??
       trimOrNull(payload.agentId) ??
@@ -238,7 +243,7 @@ const buildCardFromExplicitEvent = (
     status:
       explicit.status ??
       existing?.status ??
-      (explicit.kind === "playbook_triggered" ? "todo" : "todo"),
+      (explicit.kind === "playbook_triggered" ? "scheduled" : "inbox"),
     source:
       explicit.kind === "playbook_triggered" ? "playbook" : "hermes_event",
     sourceEventId: explicit.sourceEventId,
@@ -365,7 +370,7 @@ const deriveChatRequestCard = (
     id,
     title: truncateTitle(text, "Incoming request"),
     description: text,
-    status: "todo",
+    status: "inbox",
     sourceEventId: id,
     assignedAgentId: agentId,
     createdAt: timestamp,
@@ -406,7 +411,7 @@ export const deriveRecoveredAgentRequestCard = (
       id: requestKey,
       title: truncateTitle(text, "Recovered request"),
       description: text,
-      status: "todo",
+      status: "inbox",
       source: "hermes_event",
       sourceEventId: requestKey,
       assignedAgentId: agent.agentId,
@@ -435,7 +440,7 @@ export const deriveRecoveredAgentRequestCard = (
     id: fallbackKey,
     title: truncateTitle(fallbackText, "Recovered request"),
     description: fallbackText,
-    status: "todo",
+    status: "inbox",
     source: "hermes_event",
     sourceEventId: fallbackKey,
     assignedAgentId: agent.agentId,
@@ -475,12 +480,10 @@ export const syncCardWithLinkedRun = (
   if (!run) return card;
   const status: TaskBoardStatus =
     run.endedAt === null
-      ? "in_progress"
+      ? "working"
       : run.outcome === "error"
-        ? "blocked"
-        : card.status === "done"
-          ? "done"
-          : "review";
+        ? "needs_attention"
+        : "done";
   const updatedAt = new Date(run.endedAt ?? run.startedAt).toISOString();
   return {
     ...card,
@@ -501,7 +504,7 @@ const syncCardWithAgent = (
   if (agent.awaitingUserInput && card.status !== "done") {
     return {
       ...card,
-      status: "blocked",
+      status: "needs_attention",
       lastActivityAt: new Date(
         agent.lastActivityAt ?? Date.now(),
       ).toISOString(),
@@ -517,8 +520,8 @@ const compareDuplicatePriority = (
   const leftDone = left.status === "done" ? 1 : 0;
   const rightDone = right.status === "done" ? 1 : 0;
   if (leftDone !== rightDone) return rightDone - leftDone;
-  const leftActive = left.status === "in_progress" ? 1 : 0;
-  const rightActive = right.status === "in_progress" ? 1 : 0;
+  const leftActive = left.status === "working" ? 1 : 0;
+  const rightActive = right.status === "working" ? 1 : 0;
   if (leftActive !== rightActive) return rightActive - leftActive;
   return Date.parse(right.updatedAt) - Date.parse(left.updatedAt);
 };
@@ -533,12 +536,12 @@ const buildPlaybookCards = (
       existingCards.find((card) => card.id === `playbook:${job.id}`) ??
       null;
     const inferredStatus: TaskBoardStatus = job.state.runningAtMs
-      ? "in_progress"
+      ? "working"
       : job.state.lastStatus === "error"
-        ? "blocked"
+        ? "needs_attention"
         : existing?.status === "done"
           ? "done"
-          : "todo";
+          : "scheduled";
     return makeCard({
       ...(existing ?? {}),
       id: existing?.id ?? `playbook:${job.id}`,
@@ -593,10 +596,10 @@ const buildStandupSeedCards = (
             .join("\n"),
         status:
           blockers.length > 0
-            ? "blocked"
+            ? "needs_attention"
             : existing?.status === "done"
               ? "done"
-              : (existing?.status ?? "todo"),
+              : (existing?.status ?? "inbox"),
         source: "fallback_inferred",
         sourceEventId: existing?.sourceEventId ?? `standup:${agentId}`,
         assignedAgentId: agentId,
@@ -1031,7 +1034,7 @@ export const useTaskBoardController = ({
         id: `manual:${randomUUID()}`,
         title: input?.title?.trim() || "New task",
         description: input?.description ?? "",
-        status: input?.status ?? "todo",
+        status: input?.status ?? "inbox",
         source: "hermes3d_manual",
         assignedAgentId: input?.assignedAgentId ?? null,
         playbookJobId: input?.playbookJobId ?? null,
@@ -1278,7 +1281,7 @@ export const useTaskBoardController = ({
               id: cardId,
               title: truncateTitle(userText, "Incoming request"),
               description: userText,
-              status: "in_progress",
+              status: "working",
               source: "hermes_event",
               sourceEventId: cardId,
               assignedAgentId: agentId,
@@ -1299,7 +1302,7 @@ export const useTaskBoardController = ({
         if (phase === "start") {
           void updateCard(candidate.id, {
             runId,
-            status: "in_progress",
+            status: "working",
             lastActivityAt: new Date().toISOString(),
           });
           return;
@@ -1307,7 +1310,7 @@ export const useTaskBoardController = ({
         if (phase === "error") {
           void updateCard(candidate.id, {
             runId,
-            status: "blocked",
+            status: "needs_attention",
             lastActivityAt: new Date().toISOString(),
           });
           return;
@@ -1315,7 +1318,7 @@ export const useTaskBoardController = ({
         if (phase === "end") {
           void updateCard(candidate.id, {
             runId,
-            status: "review",
+            status: "done",
             lastActivityAt: new Date().toISOString(),
           });
         }
@@ -1330,10 +1333,10 @@ export const useTaskBoardController = ({
 
   const cardsByStatus = useMemo(() => {
     const grouped = {
-      todo: [] as TaskBoardCard[],
-      in_progress: [] as TaskBoardCard[],
-      blocked: [] as TaskBoardCard[],
-      review: [] as TaskBoardCard[],
+      inbox: [] as TaskBoardCard[],
+      scheduled: [] as TaskBoardCard[],
+      working: [] as TaskBoardCard[],
+      needs_attention: [] as TaskBoardCard[],
       done: [] as TaskBoardCard[],
     };
     for (const card of state.cards) {

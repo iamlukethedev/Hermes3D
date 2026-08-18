@@ -106,8 +106,8 @@ export function KanbanImmersiveScreen({
         >
           <div className="min-h-0 flex-1">
           <TaskBoardView
-            title="Kanban Board"
-            subtitle="Headquarters task routing, scheduling, and review."
+            title="Hermes Task Board"
+            subtitle="Inbox, schedules, live runs, approvals, and learned skills."
             agents={agents}
             cardsByStatus={cardsByStatus}
             selectedCard={selectedCard}

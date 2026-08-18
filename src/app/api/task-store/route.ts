@@ -1,4 +1,7 @@
-import { isTaskBoardSource, isTaskBoardStatus } from "@/features/office/tasks/types";
+import {
+  isTaskBoardSource,
+  normalizeTaskBoardStatus,
+} from "@/features/office/tasks/types";
 import { archiveSharedTask, listSharedTasks, upsertSharedTask } from "@/lib/tasks/shared-store";
 
 const json = (body: unknown, status = 200) =>
@@ -38,7 +41,11 @@ export async function PUT(request: Request) {
   if (!id || !title) {
     return errorJson("Task id and title are required.", 400);
   }
-  if (task.status !== undefined && !isTaskBoardStatus(task.status)) {
+  // Legacy statuses (todo, in_progress, blocked, review) are accepted and
+  // normalized so older task-manager skill installs keep working.
+  const status =
+    task.status === undefined ? undefined : normalizeTaskBoardStatus(task.status);
+  if (task.status !== undefined && status === null) {
     return errorJson(`Invalid status: "${String(task.status)}".`, 400);
   }
   if (task.source !== undefined && !isTaskBoardSource(task.source)) {
@@ -46,7 +53,12 @@ export async function PUT(request: Request) {
   }
   try {
     return json({
-      task: upsertSharedTask({ ...task, id, title }),
+      task: upsertSharedTask({
+        ...task,
+        ...(status !== undefined ? { status: status ?? undefined } : {}),
+        id,
+        title,
+      }),
     });
   } catch (error) {
     console.error("[task-store] PUT failed:", error);

@@ -6,7 +6,7 @@
       "id": "research-mtulsa-com",
       "title": "Research mtulsa.com",
       "description": "Review mtulsa.com and summarize the site, positioning, and improvement opportunities.",
-      "status": "in_progress",
+      "status": "working",
       "source": "hermes3d_manual",
       "sourceEventId": null,
       "assignedAgentId": "main",
@@ -26,16 +26,23 @@
           "type": "created",
           "note": "Task created.",
           "fromStatus": null,
-          "toStatus": "todo"
+          "toStatus": "inbox"
         },
         {
           "at": "2026-03-30T00:10:00.000Z",
           "type": "status_changed",
           "note": null,
-          "fromStatus": "todo",
-          "toStatus": "in_progress"
+          "fromStatus": "inbox",
+          "toStatus": "working"
         }
-      ]
+      ],
+      "model": "hermes-4-405b",
+      "skills": [
+        "web-research"
+      ],
+      "subagentCount": 0,
+      "scheduledFor": null,
+      "learnedSkill": false
     }
   ]
 }

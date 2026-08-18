@@ -23,13 +23,13 @@ describe("task gateway client", () => {
 
   it("creates tasks via tasks.create", async () => {
     const client = {
-      call: vi.fn(async () => ({ id: "task-1", title: "Ship board", status: "todo" })),
+      call: vi.fn(async () => ({ id: "task-1", title: "Ship board", status: "inbox" })),
     } as unknown as GatewayClient;
 
     await createGatewayTask(client, {
       title: "Ship board",
       description: "Release the board.",
-      status: "todo",
+      status: "inbox",
       source: "hermes3d_manual",
     });
 
@@ -38,7 +38,7 @@ describe("task gateway client", () => {
       expect.objectContaining({
         title: "Ship board",
         description: "Release the board.",
-        status: "todo",
+        status: "inbox",
         source: "hermes3d_manual",
       })
     );
@@ -49,12 +49,12 @@ describe("task gateway client", () => {
       call: vi.fn(async () => ({ ok: true })),
     } as unknown as GatewayClient;
 
-    await updateGatewayTask(client, "task-1", { status: "review" });
+    await updateGatewayTask(client, "task-1", { status: "done" });
     await deleteGatewayTask(client, "task-1");
 
     expect(client.call).toHaveBeenCalledWith(
       "tasks.update",
-      expect.objectContaining({ id: "task-1", status: "review" })
+      expect.objectContaining({ id: "task-1", status: "done" })
     );
     expect(client.call).toHaveBeenCalledWith("tasks.delete", { id: "task-1" });
   });

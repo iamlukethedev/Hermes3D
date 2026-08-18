@@ -39,8 +39,8 @@ export function TaskBoardPanel({
 }) {
   return (
     <TaskBoardView
-      title="Kanban"
-      subtitle="Manual tasks, inferred requests, and scheduled playbooks."
+      title="Hermes Tasks"
+      subtitle="The Hermes agent task lifecycle at a glance."
       agents={agents}
       cardsByStatus={cardsByStatus}
       selectedCard={selectedCard}

@@ -4,7 +4,10 @@ import fs from "node:fs";
 import path from "node:path";
 
 import type { TaskBoardCard, TaskBoardSource, TaskBoardStatus } from "@/features/office/tasks/types";
-import { isTaskBoardSource, isTaskBoardStatus } from "@/features/office/tasks/types";
+import {
+  isTaskBoardSource,
+  normalizeTaskBoardStatus,
+} from "@/features/office/tasks/types";
 import { resolveStateDir } from "@/lib/hermes/paths";
 
 export type SharedTaskHistoryEntry = {
@@ -62,9 +65,17 @@ const normalizeHistoryEntry = (value: unknown): SharedTaskHistoryEntry | null =>
     at,
     type: type as SharedTaskHistoryEntry["type"],
     note: trimString(record.note) || null,
-    fromStatus: isTaskBoardStatus(record.fromStatus) ? record.fromStatus : null,
-    toStatus: isTaskBoardStatus(record.toStatus) ? record.toStatus : null,
+    fromStatus: normalizeTaskBoardStatus(record.fromStatus),
+    toStatus: normalizeTaskBoardStatus(record.toStatus),
   };
+};
+
+const MAX_SKILLS_COUNT = 16;
+
+const normalizeSubagentCount = (value: unknown): number => {
+  const parsed = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) return 0;
+  return Math.min(Math.floor(parsed), 99);
 };
 
 const normalizeTaskRecord = (value: unknown): SharedTaskRecord | null => {
@@ -79,7 +90,7 @@ const normalizeTaskRecord = (value: unknown): SharedTaskRecord | null => {
     id,
     title,
     description: trimString(record.description),
-    status: isTaskBoardStatus(record.status) ? record.status : "todo",
+    status: normalizeTaskBoardStatus(record.status) ?? "inbox",
     source: isTaskBoardSource(record.source) ? record.source : "hermes3d_manual",
     sourceEventId: trimString(record.sourceEventId) || null,
     assignedAgentId: trimString(record.assignedAgentId) || null,
@@ -93,6 +104,11 @@ const normalizeTaskRecord = (value: unknown): SharedTaskRecord | null => {
     notes: normalizeStringArray(record.notes),
     isArchived: Boolean(record.isArchived),
     isInferred: false,
+    model: trimString(record.model) || null,
+    skills: normalizeStringArray(record.skills).slice(0, MAX_SKILLS_COUNT),
+    subagentCount: normalizeSubagentCount(record.subagentCount),
+    scheduledFor: trimString(record.scheduledFor) || null,
+    learnedSkill: Boolean(record.learnedSkill),
     history: Array.isArray(record.history)
       ? record.history
           .map((entry) => normalizeHistoryEntry(entry))
@@ -225,7 +241,7 @@ export const upsertSharedTask = (
   const store = readStore();
   const existing = store.tasks.find((entry) => entry.id === task.id) ?? null;
   const nowIso = task.updatedAt?.trim() || new Date().toISOString();
-  const rawStatus = task.status ?? existing?.status ?? "todo";
+  const rawStatus = task.status ?? existing?.status ?? "inbox";
   const rawSource = (task.source as TaskBoardSource | undefined) ?? existing?.source ?? "hermes3d_manual";
   const notes = (task.notes ? [...task.notes] : [...(existing?.notes ?? [])])
     .slice(0, MAX_NOTES_COUNT)
@@ -235,7 +251,7 @@ export const upsertSharedTask = (
     id: task.id.trim(),
     title: truncateField(task.title.trim() || existing?.title || "Untitled task", MAX_TITLE_LENGTH),
     description: truncateField(task.description?.trim() ?? existing?.description ?? "", MAX_DESCRIPTION_LENGTH),
-    status: isTaskBoardStatus(rawStatus) ? rawStatus : "todo",
+    status: normalizeTaskBoardStatus(rawStatus) ?? "inbox",
     source: isTaskBoardSource(rawSource) ? rawSource : "hermes3d_manual",
     sourceEventId: task.sourceEventId ?? existing?.sourceEventId ?? null,
     assignedAgentId: task.assignedAgentId ?? existing?.assignedAgentId ?? null,
@@ -249,6 +265,14 @@ export const upsertSharedTask = (
     notes,
     isArchived: task.isArchived ?? existing?.isArchived ?? false,
     isInferred: false,
+    model: (task.model?.trim() || existing?.model) ?? null,
+    skills: (task.skills ?? existing?.skills ?? [])
+      .map((skill) => skill.trim())
+      .filter(Boolean)
+      .slice(0, MAX_SKILLS_COUNT),
+    subagentCount: normalizeSubagentCount(task.subagentCount ?? existing?.subagentCount ?? 0),
+    scheduledFor: (task.scheduledFor?.trim() || existing?.scheduledFor) ?? null,
+    learnedSkill: task.learnedSkill ?? existing?.learnedSkill ?? false,
     history: [],
   };
   next.history = appendHistory(existing, next);

@@ -33,13 +33,14 @@ describe("task board controller helpers", () => {
         assignedAgentId: "agent-1",
         runId: "run-1",
       },
+      // Legacy "review" payload status maps onto needs_attention below.
     });
 
     expect(parsed).toEqual(
       expect.objectContaining({
         taskId: "task-42",
         title: "Ship the kanban board",
-        status: "review",
+        status: "needs_attention",
         assignedAgentId: "agent-1",
         runId: "run-1",
         sourceEventId: "task_status_changed:42",
@@ -204,12 +205,12 @@ describe("task board controller helpers", () => {
     expect(card).toBeNull();
   });
 
-  it("updates linked run cards to done or blocked", () => {
+  it("updates linked run cards to done or needs_attention", () => {
     const baseCard = {
       id: "task-1",
       title: "Review patch",
       description: "",
-      status: "in_progress" as const,
+      status: "working" as const,
       source: "hermes3d_manual" as const,
       sourceEventId: null,
       assignedAgentId: "agent-1",
@@ -223,6 +224,11 @@ describe("task board controller helpers", () => {
       notes: [],
       isArchived: false,
       isInferred: false,
+      model: null,
+      skills: [] as string[],
+      subagentCount: 0,
+      scheduledFor: null,
+      learnedSkill: false,
     };
     const okRun: RunRecord = {
       runId: "run-1",
@@ -238,7 +244,7 @@ describe("task board controller helpers", () => {
       outcome: "error",
     };
 
-    expect(syncCardWithLinkedRun(baseCard, [okRun]).status).toBe("review");
-    expect(syncCardWithLinkedRun(baseCard, [errorRun]).status).toBe("blocked");
+    expect(syncCardWithLinkedRun(baseCard, [okRun]).status).toBe("done");
+    expect(syncCardWithLinkedRun(baseCard, [errorRun]).status).toBe("needs_attention");
   });
 });
