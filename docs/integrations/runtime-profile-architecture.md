@@ -95,15 +95,12 @@ Runtime profile answers:
 
 ### Floor Binding
 
-A floor binding maps an office floor to a runtime profile.
+The office has a single floor — Hermes — and it is bound to one runtime
+profile at a time.
 
-Examples:
+Example:
 
-- `Hermes Ground Floor -> hermes-default`
-- `Hermes Floor -> hermes-first`
-- `Custom Floor -> custom-default`
-- `Lobby -> null`
-- `Campus -> null`
+- `Hermes -> hermes-default`
 
 Suggested shape:
 
@@ -114,35 +111,26 @@ export type FloorRuntimeBinding = {
 };
 ```
 
-Floor binding answers:
-
-- which runtime powers this floor?
-- is this floor provider-backed, function-backed, or a destination?
-
 ## Runtime Model
 
 The recommended mental model is:
 
 ```text
-Provider -> Runtime Profile -> Floor Binding
+Provider -> Runtime Profile -> Hermes Floor
 ```
 
 Examples:
 
 - provider: `hermes`
   - profile: `hermes-default`
-  - bound floor: `hermes-ground`
-
-- provider: `hermes`
-  - profile: `hermes-supervisor`
-  - bound floor: `hermes-first`
+  - bound floor: `hermes`
 
 - provider: `custom`
   - profiles:
     - `custom-default`
     - `custom-staging`
     - `custom-prod`
-  - one or more custom floors may bind to them later
+  - the Hermes floor may bind to one of them instead
 
 ## Default Behavior
 

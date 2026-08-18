@@ -447,7 +447,7 @@ export const defaultStudioTaskBoardPreference =
 export const defaultStudioFloorRuntimeState = (
   floorId: FloorId,
 ): StudioFloorRuntimeState => {
-  const floor = getOfficeFloor(floorId);
+  const floor = getOfficeFloor();
   return {
     floorId,
     provider: floor.provider,
@@ -1218,7 +1218,7 @@ const normalizeFloorRuntimeState = (
   fallback: StudioFloorRuntimeState = defaultStudioFloorRuntimeState(floorId),
 ): StudioFloorRuntimeState => {
   if (!isRecord(value)) return fallback;
-  const floor = getOfficeFloor(floorId);
+  const floor = getOfficeFloor();
   const runtimeProfileIdRaw =
     value.runtimeProfileId === null || value.runtimeProfileId === undefined
       ? fallback.runtimeProfileId

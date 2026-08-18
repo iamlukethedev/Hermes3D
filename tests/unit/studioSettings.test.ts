@@ -17,7 +17,7 @@ describe("studio settings normalization", () => {
     const normalized = normalizeStudioSettings(null);
     expect(normalized.version).toBe(1);
     expect(normalized.gateway).toBeNull();
-    expect(normalized.activeFloorId).toBe("lobby");
+    expect(normalized.activeFloorId).toBe("hermes");
     expect(normalized.focused).toEqual({});
     expect(normalized.avatars).toEqual({});
     expect(normalized.office).toEqual({});
@@ -199,12 +199,12 @@ describe("studio settings normalization", () => {
     );
   });
 
-  it("creates default per-floor runtime state", () => {
+  it("creates default runtime state for the Hermes floor", () => {
     const normalized = normalizeStudioSettings(null);
 
-    expect(normalized.officeFloors["hermes-first"]).toEqual(
+    expect(normalized.officeFloors.hermes).toEqual(
       expect.objectContaining({
-        floorId: "hermes-first",
+        floorId: "hermes",
         provider: "hermes",
         runtimeProfileId: "hermes-default",
         gatewayUrl: null,
@@ -213,10 +213,10 @@ describe("studio settings normalization", () => {
     );
   });
 
-  it("normalizes and merges per-floor runtime state", () => {
+  it("normalizes and merges the Hermes floor runtime state", () => {
     const normalized = normalizeStudioSettings({
       officeFloors: {
-        "hermes-first": {
+        hermes: {
           runtimeProfileId: " hermes-pi ",
           gatewayUrl: " ws://127.0.0.1:18789 ",
           status: "connected",
@@ -227,9 +227,9 @@ describe("studio settings normalization", () => {
       },
     });
 
-    expect(normalized.officeFloors["hermes-first"]).toEqual(
+    expect(normalized.officeFloors.hermes).toEqual(
       expect.objectContaining({
-        floorId: "hermes-first",
+        floorId: "hermes",
         provider: "hermes",
         runtimeProfileId: "hermes-pi",
         gatewayUrl: "ws://localhost:18789",
@@ -242,7 +242,7 @@ describe("studio settings normalization", () => {
 
     const merged = mergeStudioSettings(normalized, {
       officeFloors: {
-        "hermes-first": {
+        hermes: {
           status: "error",
           lastErrorCode: "connect_timeout",
           lastErrorMessage: "Timed out connecting",
@@ -250,7 +250,7 @@ describe("studio settings normalization", () => {
       },
     });
 
-    expect(merged.officeFloors["hermes-first"]).toEqual(
+    expect(merged.officeFloors.hermes).toEqual(
       expect.objectContaining({
         runtimeProfileId: "hermes-pi",
         gatewayUrl: "ws://localhost:18789",
@@ -264,21 +264,21 @@ describe("studio settings normalization", () => {
   it("resolves floor runtime state with fallback", () => {
     const normalized = normalizeStudioSettings(null);
 
-    expect(resolveStudioFloorRuntimeState(normalized, "training")).toEqual(
-      defaultStudioFloorRuntimeState("training"),
+    expect(resolveStudioFloorRuntimeState(normalized, "hermes")).toEqual(
+      defaultStudioFloorRuntimeState("hermes"),
     );
   });
 
-  it("normalizes and merges active floor selection", () => {
+  it("coerces legacy multi-floor selections onto the Hermes floor", () => {
     const normalized = normalizeStudioSettings({
       activeFloorId: "hermes-first",
     });
-    expect(resolveStudioActiveFloorId(normalized)).toBe("hermes-first");
+    expect(resolveStudioActiveFloorId(normalized)).toBe("hermes");
 
     const merged = mergeStudioSettings(normalized, {
-      activeFloorId: "training",
+      activeFloorId: "training" as unknown as import("@/lib/office/floors").FloorId,
     });
-    expect(resolveStudioActiveFloorId(merged)).toBe("lobby");
+    expect(resolveStudioActiveFloorId(merged)).toBe("hermes");
   });
 
   it("normalizes task board cards per gateway", () => {

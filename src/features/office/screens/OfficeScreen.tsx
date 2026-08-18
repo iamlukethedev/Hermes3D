@@ -30,10 +30,6 @@ import {
 import {
   resolveDeskAssignments,
   resolveOfficePreferencePublic,
-  resolveStudioActiveFloorId,
-  resolveStudioGatewayProfiles,
-  type StudioGatewayAdapterType,
-  type StudioGatewaySettings,
 } from "@/lib/studio/settings";
 import {
   createGatewayAgent,
@@ -61,7 +57,6 @@ import {
   stripUiMetadata,
 } from "@/lib/text/message-extract";
 import { resolveOfficeIntentSnapshot } from "@/lib/office/deskDirectives";
-import { OfficeFloorNav } from "@/features/office/components/OfficeFloorNav";
 import { AgentChatPanel } from "@/features/agents/components/AgentChatPanel";
 import {
   RemoteAgentChatPanel,
@@ -72,15 +67,9 @@ import {
   type RuntimeAgentMessageMode,
 } from "@/lib/runtime/agentMessaging";
 import {
-  buildFloorRosterState,
-  createFloorRosterCache,
-} from "@/lib/office/floorRoster";
-import {
+  DEFAULT_ACTIVE_FLOOR_ID,
   getOfficeFloor,
-  listOfficeFloorsForProvider,
-  resolveActiveOfficeFloorId,
   type FloorId,
-  type FloorProvider,
 } from "@/lib/office/floors";
 import {
   AgentEditorModal,
@@ -323,13 +312,6 @@ type OfficeDeleteMutationBlockState = {
   phase: "queued" | "mutating" | "awaiting-restart";
   startedAt: number;
   sawDisconnect: boolean;
-};
-
-type PendingFloorRuntimeSwitch = {
-  floorId: FloorId;
-  adapterType: StudioGatewayAdapterType;
-  gatewayUrl: string;
-  token: string;
 };
 
 type PhoneCallSpeakPayload = {
@@ -974,9 +956,7 @@ export function OfficeScreen({
     gatewayUrl,
     token,
     selectedAdapterType,
-    detectedAdapterType,
     activeAdapterType,
-    adapterProfiles,
     localGatewayDefaults,
     error: gatewayError,
     connect,
@@ -1114,18 +1094,8 @@ export function OfficeScreen({
   const [deskAssignmentByDeskUid, setDeskAssignmentByDeskUid] = useState<
     Record<string, string>
   >({});
-  const [activeFloorId, setActiveFloorId] = useState<FloorId>("lobby");
-  const [pendingFloorRuntimeSwitch, setPendingFloorRuntimeSwitch] =
-    useState<PendingFloorRuntimeSwitch | null>(null);
-  const previousGatewayStatusRef = useRef<"disconnected" | "connecting" | "connected">(
-    "disconnected",
-  );
-  const didAutoNavigateFromLobbyRef = useRef(false);
-  const [floorRosterCache, setFloorRosterCache] = useState(() =>
-    createFloorRosterCache(),
-  );
-  const activeFloorIdRef = useRef<FloorId>("lobby");
-  const floorRosterCacheRef = useRef(floorRosterCache);
+  // The office has a single floor — Hermes.
+  const activeFloorId = DEFAULT_ACTIVE_FLOOR_ID;
   const [gatewayModels, setGatewayModels] = useState<GatewayModelChoice[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [marketplaceOpen, setMarketplaceOpen] = useState(false);
@@ -1160,127 +1130,7 @@ export function OfficeScreen({
   const { showOnboarding, completeOnboarding, resetOnboarding } =
     useOnboardingState();
   const [forceShowOnboarding, setForceShowOnboarding] = useState(false);
-  const activeFloor = useMemo(
-    () => getOfficeFloor(resolveActiveOfficeFloorId(activeFloorId)),
-    [activeFloorId],
-  );
-
-  useEffect(() => {
-    activeFloorIdRef.current = activeFloorId;
-  }, [activeFloorId]);
-
-  useEffect(() => {
-    floorRosterCacheRef.current = floorRosterCache;
-  }, [floorRosterCache]);
-
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const settings = await settingsCoordinator.loadSettings({ maxAgeMs: 30_000 });
-        if (!settings || cancelled) return;
-        setActiveFloorId(resolveStudioActiveFloorId(settings));
-      } catch (error) {
-        if (!cancelled) {
-          console.error("Failed to load active floor preference.", error);
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [settingsCoordinator]);
-
-  // Reset auto-navigate flag when disconnected so the next connection can navigate again.
-  useEffect(() => {
-    if (status !== "connected" && status !== "connecting") {
-      didAutoNavigateFromLobbyRef.current = false;
-    }
-  }, [status]);
-
-  // Auto-navigate away from lobby when a real adapter connects.
-  // Uses a ref flag instead of previousGatewayStatusRef so the effect can
-  // re-run when detectedAdapterType arrives in a later render (after status
-  // already flipped to "connected").
-  useEffect(() => {
-    if (status !== "connected") return;
-    if (didAutoNavigateFromLobbyRef.current) return;
-    if (activeFloor.kind !== "lobby" || activeFloor.provider !== "demo") return;
-
-    const connectedProvider =
-      detectedAdapterType && detectedAdapterType !== "demo"
-        ? detectedAdapterType
-        : selectedAdapterType !== "demo"
-          ? selectedAdapterType
-          : null;
-    if (!connectedProvider) return;
-
-    const targetFloor =
-      listOfficeFloorsForProvider(connectedProvider).find(
-        (floor) => floor.enabled && floor.kind === "runtime",
-      ) ?? null;
-    if (!targetFloor || targetFloor.id === activeFloor.id) return;
-
-    didAutoNavigateFromLobbyRef.current = true;
-    setActiveFloorId(targetFloor.id);
-    setSelectedAdapterType(targetFloor.provider as StudioGatewayAdapterType);
-    settingsCoordinator.schedulePatch({ activeFloorId: targetFloor.id }, 0);
-  }, [
-    activeFloor.id,
-    activeFloor.kind,
-    activeFloor.provider,
-    detectedAdapterType,
-    selectedAdapterType,
-    setSelectedAdapterType,
-    settingsCoordinator,
-    status,
-  ]);
-
-  useEffect(() => {
-    if (!pendingFloorRuntimeSwitch) return;
-    const targetSelectedAdapter = selectedAdapterType === pendingFloorRuntimeSwitch.adapterType;
-    const targetGatewayUrl = gatewayUrl.trim() === pendingFloorRuntimeSwitch.gatewayUrl;
-    const targetToken = token === pendingFloorRuntimeSwitch.token;
-    if (!targetSelectedAdapter || !targetGatewayUrl || !targetToken) {
-      return;
-    }
-    if (status === "connected" || status === "connecting") {
-      const runtimeMatchesTarget =
-        activeAdapterType === pendingFloorRuntimeSwitch.adapterType &&
-        gatewayUrl.trim() === pendingFloorRuntimeSwitch.gatewayUrl &&
-        token === pendingFloorRuntimeSwitch.token;
-      if (runtimeMatchesTarget) {
-        setPendingFloorRuntimeSwitch(null);
-        return;
-      }
-      disconnect();
-      return;
-    }
-    void connect()
-      .catch((error) => {
-        console.error("Failed to connect floor runtime.", error);
-      })
-      .finally(() => {
-        setPendingFloorRuntimeSwitch((current) =>
-          current &&
-          current.floorId === pendingFloorRuntimeSwitch.floorId &&
-          current.adapterType === pendingFloorRuntimeSwitch.adapterType &&
-          current.gatewayUrl === pendingFloorRuntimeSwitch.gatewayUrl &&
-          current.token === pendingFloorRuntimeSwitch.token
-            ? null
-            : current,
-        );
-      });
-  }, [
-    activeAdapterType,
-    connect,
-    disconnect,
-    gatewayUrl,
-    pendingFloorRuntimeSwitch,
-    selectedAdapterType,
-    status,
-    token,
-  ]);
+  const activeFloor = getOfficeFloor();
 
   useEffect(() => {
     initJukeboxStore();
@@ -1431,102 +1281,8 @@ export function OfficeScreen({
       if (options?.selectStore !== false) {
         dispatch({ type: "selectAgent", agentId });
       }
-      setFloorRosterCache((prev) => {
-        const targetFloorId = options?.persistFloorId ?? activeFloorIdRef.current;
-        const current = prev[targetFloorId];
-        if (!current || current.selectedAgentId === agentId) return prev;
-        return {
-          ...prev,
-          [targetFloorId]: { ...current, selectedAgentId: agentId },
-        };
-      });
     },
     [dispatch],
-  );
-  const handleSelectFloor = useCallback(
-    async (floorId: FloorId) => {
-      const resolved = resolveActiveOfficeFloorId(floorId);
-      const floor = getOfficeFloor(resolved);
-      const targetRosterState = floorRosterCacheRef.current[resolved];
-      setAgentsLoaded(false);
-      setActiveFloorId(resolved);
-      settingsCoordinator.schedulePatch({ activeFloorId: resolved }, 0);
-      setOfficeCameraCenterSignal((current) => current + 1);
-
-      const adapterType = floor.provider as StudioGatewayAdapterType;
-      let nextGatewayUrl = gatewayUrl.trim();
-      let nextToken = token;
-
-      try {
-        const envelope =
-          typeof settingsCoordinator.loadSettingsEnvelope === "function"
-            ? await settingsCoordinator.loadSettingsEnvelope({ maxAgeMs: 30_000 })
-            : {
-                settings: await settingsCoordinator.loadSettings({ maxAgeMs: 30_000 }),
-                localGatewayDefaults: null,
-              };
-        const settings = envelope.settings ?? null;
-        // gatewayPrivate is not in the API response — use sanitized public settings + in-memory
-        // adapterProfiles (which may carry a URL from a previous successful connection).
-        const gatewaySettings: StudioGatewaySettings | null =
-          adapterProfiles && Object.keys(adapterProfiles).length > 0
-            ? ({ profiles: adapterProfiles } as StudioGatewaySettings)
-            : null;
-        const { profiles } = resolveStudioGatewayProfiles({
-          gateway: gatewaySettings,
-          localDefaults: localGatewayDefaults,
-        });
-        const floorRuntime = settings?.officeFloors?.[resolved];
-        nextGatewayUrl =
-          floorRuntime?.gatewayUrl?.trim() || profiles[adapterType]?.url?.trim() || nextGatewayUrl;
-        // Token is intentionally empty — the Studio proxy injects the server-side token.
-        nextToken = "";
-      } catch (error) {
-        console.error("Failed to resolve floor runtime profile.", error);
-      }
-
-      // Guard: if this is a runtime floor and there's no gateway URL to connect to,
-      // bail back to lobby rather than entering a connect-hang limbo state.
-      if (floor.kind === "runtime" && !nextGatewayUrl.trim()) {
-        setActiveFloorId("lobby");
-        settingsCoordinator.schedulePatch({ activeFloorId: "lobby" }, 0);
-        setAgentsLoaded(true);
-        return;
-      }
-
-      setSelectedAdapterType(adapterType);
-      setGatewayUrl(nextGatewayUrl);
-      setToken(nextToken);
-      setPendingFloorRuntimeSwitch({
-        floorId: resolved,
-        adapterType,
-        gatewayUrl: nextGatewayUrl,
-        token: nextToken,
-      });
-
-      const preferredAgentId =
-        targetRosterState?.selectedAgentId ??
-        targetRosterState?.entries[0]?.agentId ??
-        null;
-      if (preferredAgentId) {
-        focusLocalAgent(preferredAgentId, {
-          openChat: false,
-          persistFloorId: resolved,
-          selectStore: false,
-        });
-      }
-    },
-    [
-      adapterProfiles,
-      focusLocalAgent,
-      gatewayUrl,
-      localGatewayDefaults,
-      setGatewayUrl,
-      setToken,
-      setSelectedAdapterType,
-      settingsCoordinator,
-      token,
-    ],
   );
   const focusChatTarget = useCallback(
     (agentId: string) => {
@@ -1546,26 +1302,6 @@ export function OfficeScreen({
     },
     [focusLocalAgent],
   );
-  useEffect(() => {
-    if (!agentsLoaded) {
-      return;
-    }
-    if (pendingFloorRuntimeSwitch?.floorId === activeFloor.id) {
-      return;
-    }
-    setFloorRosterCache((previous) => ({
-      ...previous,
-      [activeFloor.id]: buildFloorRosterState({
-        floorId: activeFloor.id,
-        hydratedAt: Date.now(),
-        result: {
-          seeds: state.agents,
-          suggestedSelectedAgentId: state.selectedAgentId ?? previous[activeFloor.id]?.selectedAgentId ?? null,
-        },
-      }),
-    }));
-  }, [activeFloor.id, agentsLoaded, pendingFloorRuntimeSwitch, state.agents, state.selectedAgentId]);
-
   const handleDeskAssignmentChange = useCallback(
     (deskUid: string, agentId: string | null) => {
       const key = gatewayUrl.trim();
@@ -4747,20 +4483,11 @@ export function OfficeScreen({
           </div>
         </div>
       ) : null}
-      <OfficeFloorNav
-        activeFloorId={activeFloor.id}
-        floorRosterCache={floorRosterCache}
-        onSelectFloor={(floorId) => {
-          void handleSelectFloor(floorId);
-        }}
-        activeAdapterType={(selectedAdapterType as FloorProvider) ?? null}
-      />
       <section className="relative h-full min-h-0 min-w-0 overflow-hidden">
         <RetroOffice3D
-          key={activeFloor.id}
           agents={allVisibleAgents}
           storageNamespace={activeFloor.id}
-          layoutPreset={activeFloor.kind === "lobby" ? "lobby" : "office"}
+          layoutPreset="office"
           officeCenterSignal={officeCameraCenterSignal}
           animationState={officeAnimationState}
           deskAssignmentByDeskUid={deskAssignmentByDeskUid}
