@@ -1,7 +1,6 @@
 "use client";
 
 import { memo, useMemo, type ReactNode } from "react";
-import * as THREE from "three";
 import {
   CANVAS_H,
   CANVAS_W,
@@ -176,12 +175,11 @@ function OfficeFlagPole({
   );
 }
 
-// One perimeter wall: plaster lower wall, glass strip, mullion posts and a
-// metal cap rail. Roughly 1.7 units tall overall so the walls read taller
-// than agents (~1.0) and tall furniture such as the fridge (~1.4), with the
-// upper part kept as glass so the interior stays visible from the overview
-// camera. The x/z footprint still matches the old 1-unit tall box exactly so
-// navigation and tests are unaffected.
+// One perimeter wall: a solid plaster wall with a thin dark cap trim on top.
+// Roughly 1.7 units tall overall so the walls read taller than agents (~1.0)
+// and tall furniture such as the fridge (~1.4). The x/z footprint still
+// matches the old 1-unit tall box exactly so navigation and tests are
+// unaffected.
 function PerimeterWall({
   center,
   length,
@@ -196,17 +194,8 @@ function PerimeterWall({
     [length],
   );
   const thickness = 0.12;
-  const lowerHeight = 0.9;
-  const glassHeight = 0.75;
+  const wallHeight = 1.65;
   const capHeight = 0.05;
-  const glassThickness = 0.03;
-  const glassCenterY = lowerHeight + glassHeight / 2;
-  // Mullion posts roughly every 2.7 world units, including both wall ends.
-  const mullionCount = Math.max(2, Math.round(length / 2.7) + 1);
-  const mullionOffsets = Array.from(
-    { length: mullionCount },
-    (_, index) => -length / 2 + (index * length) / (mullionCount - 1),
-  );
   // Maps (along-wall, height, across-wall) sizes onto world axes.
   const dims = (
     along: number,
@@ -217,8 +206,8 @@ function PerimeterWall({
 
   return (
     <group position={[center[0], 0, center[1]]}>
-      <mesh position={[0, lowerHeight / 2, 0]} castShadow receiveShadow>
-        <boxGeometry args={dims(length, lowerHeight, thickness)} />
+      <mesh position={[0, wallHeight / 2, 0]} castShadow receiveShadow>
+        <boxGeometry args={dims(length, wallHeight, thickness)} />
         <meshStandardMaterial
           color="#e9dfd0"
           map={plaster.map}
@@ -229,35 +218,7 @@ function PerimeterWall({
           metalness={0.02}
         />
       </mesh>
-      <mesh position={[0, glassCenterY, 0]}>
-        <boxGeometry args={dims(length, glassHeight, glassThickness)} />
-        <meshPhysicalMaterial
-          color="#cfe4ee"
-          transparent
-          opacity={0.22}
-          roughness={0.08}
-          metalness={0}
-          side={THREE.DoubleSide}
-          envMapIntensity={1.2}
-          depthWrite={false}
-        />
-      </mesh>
-      {mullionOffsets.map((offset, index) => (
-        <mesh
-          key={`mullion-${index}`}
-          position={
-            axis === "x" ? [offset, glassCenterY, 0] : [0, glassCenterY, offset]
-          }
-          castShadow
-        >
-          <boxGeometry args={dims(0.05, glassHeight + 0.04, thickness * 0.8)} />
-          <meshStandardMaterial color="#2b2f33" roughness={0.42} metalness={0.68} />
-        </mesh>
-      ))}
-      <mesh
-        position={[0, lowerHeight + glassHeight + capHeight / 2, 0]}
-        castShadow
-      >
+      <mesh position={[0, wallHeight + capHeight / 2, 0]} castShadow>
         <boxGeometry args={dims(length, capHeight, thickness)} />
         <meshStandardMaterial color="#2b2f33" roughness={0.42} metalness={0.68} />
       </mesh>
