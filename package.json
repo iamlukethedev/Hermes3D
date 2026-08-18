@@ -21,8 +21,9 @@
   },
   "dependencies": {
     "@noble/ed25519": "^3.0.0",
-    "@react-three/drei": "^10.7.7",
-    "@react-three/fiber": "^9.5.0",
+    "@react-three/drei": "^10.7.8",
+    "@react-three/fiber": "^9.7.0",
+    "@react-three/postprocessing": "^3.0.5",
     "canvas-confetti": "^1.9.4",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -35,7 +36,7 @@
     "react-mentions-ts": "^5.4.7",
     "remark-gfm": "^4.0.1",
     "tailwind-merge": "^3.4.0",
-    "three": "^0.183.2",
+    "three": "^0.185.1",
     "ws": "^8.18.3"
   },
   "devDependencies": {
@@ -47,7 +48,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "@types/three": "^0.183.1",
+    "@types/three": "^0.185.0",
     "@types/ws": "^8.18.1",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
