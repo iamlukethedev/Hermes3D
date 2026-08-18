@@ -9,9 +9,11 @@ import {
   FURNITURE_ROTATION,
   getItemBaseSize,
   getItemRotationRadians,
+  ITEM_FOOTPRINT,
   resolveItemTypeKey,
   toWorld,
 } from "@/features/retro-office/core/geometry";
+import { getBrushedMetalTextures } from "@/features/retro-office/core/proceduralTextures";
 import type { FurnitureItem } from "@/features/retro-office/core/types";
 import type { InteractiveFurnitureModelProps } from "@/features/retro-office/objects/types";
 
@@ -91,18 +93,6 @@ export const FURNITURE_TINT: Record<string, string | null> = {
   printer: "#404858",
 };
 
-const SHADOW_CASTING_FURNITURE_TYPES = new Set([
-  "desk_cubicle",
-  "executive_desk",
-  "round_table",
-  "table_rect",
-  "couch",
-  "couch_v",
-  "bookshelf",
-  "cabinet",
-  "fridge",
-]);
-
 const furnitureTemplateCache = new Map<string, THREE.Object3D>();
 
 type InstancedFurnitureMeshDef = {
@@ -129,21 +119,36 @@ const resolveFurnitureTemplate = (params: {
       : FURNITURE_TINT[params.itemType];
   const tintColor = rawTint ? new THREE.Color(rawTint) : null;
   const template = params.scene.clone(true);
-  const castShadow = SHADOW_CASTING_FURNITURE_TYPES.has(params.itemType);
 
+  let meshIndex = 0;
   template.traverse((child) => {
     if (!(child as THREE.Mesh).isMesh) return;
     const mesh = child as THREE.Mesh;
-    mesh.castShadow = castShadow;
+    mesh.castShadow = true;
     mesh.receiveShadow = true;
     const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-    const templateMats = mats.map((material) => {
+    const templateMats = mats.map((material, materialIndex) => {
       const nextMaterial = material.clone() as THREE.MeshStandardMaterial;
       if (tintColor && "color" in nextMaterial) {
-        nextMaterial.color.lerp(tintColor, 0.8);
+        // Strong lerp toward the tint keeps the color rich instead of letting
+        // the pale GLB base albedo wash it out.
+        nextMaterial.color.lerp(tintColor, 0.92);
+        // ACES filmic tone mapping renders midtones slightly darker, so
+        // brighten the tint by roughly 10% to compensate.
+        nextMaterial.color.multiplyScalar(1.1);
+        nextMaterial.color.r = Math.min(1, nextMaterial.color.r);
+        nextMaterial.color.g = Math.min(1, nextMaterial.color.g);
+        nextMaterial.color.b = Math.min(1, nextMaterial.color.b);
       }
-      if ("roughness" in nextMaterial) nextMaterial.roughness = 0.65;
+      if ("roughness" in nextMaterial) {
+        // Deterministic per-mesh roughness variation so surfaces catch the
+        // environment light differently instead of reading uniformly flat.
+        nextMaterial.roughness = 0.5 + ((meshIndex + materialIndex) % 4) * 0.07;
+      }
       if ("metalness" in nextMaterial) nextMaterial.metalness = 0.08;
+      if ("envMapIntensity" in nextMaterial) {
+        nextMaterial.envMapIntensity = 0.7;
+      }
       nextMaterial.userData = {
         ...nextMaterial.userData,
         furnitureSharedMaterial: true,
@@ -153,6 +158,7 @@ const resolveFurnitureTemplate = (params: {
     mesh.material = Array.isArray(mesh.material)
       ? templateMats
       : templateMats[0];
+    meshIndex += 1;
   });
 
   furnitureTemplateCache.set(cacheKey, template);
@@ -188,6 +194,266 @@ const buildFurnitureItemMatrix = (item: FurnitureItem, itemType: string) => {
     .multiply(unpivotMatrix)
     .multiply(scaleMatrix);
 };
+
+type ProceduralModelProps = {
+  /** Local footprint extent along X in world units. */
+  widthWorld: number;
+  /** Local footprint extent along Z in world units. */
+  depthWorld: number;
+  highlightColor: string;
+  highlightIntensity: number;
+};
+
+const WHITEBOARD_STROKES: Array<{
+  color: string;
+  length: number;
+  y: number;
+  z: number;
+}> = [
+  { color: "#c0392b", length: 0.26, y: 0.78, z: -0.22 },
+  { color: "#c0392b", length: 0.18, y: 0.73, z: -0.24 },
+  { color: "#2563a8", length: 0.34, y: 0.66, z: 0.1 },
+  { color: "#2563a8", length: 0.22, y: 0.6, z: 0.14 },
+  { color: "#2e8b57", length: 0.16, y: 0.52, z: -0.1 },
+  { color: "#1a1a1a", length: 0.3, y: 0.46, z: 0.05 },
+];
+
+/**
+ * Free-standing office whiteboard built to fit exactly inside the item
+ * footprint: thin along local X, long along local Z (the base rotation in
+ * FURNITURE_ROTATION turns it to face the room).
+ */
+function WhiteboardProceduralModel({
+  widthWorld,
+  depthWorld,
+  highlightColor,
+  highlightIntensity,
+}: ProceduralModelProps) {
+  const metal = useMemo(() => getBrushedMetalTextures(), []);
+  const boardLength = depthWorld - 0.08;
+  const boardThickness = Math.min(widthWorld * 0.28, 0.05);
+  const boardHeight = 0.54;
+  const boardCenterY = 0.64;
+  const frameThickness = 0.026;
+  const legZ = boardLength / 2 - 0.04;
+  const strokeX = boardThickness / 2 + 0.003;
+  const trayY = boardCenterY - boardHeight / 2 - 0.015;
+
+  const frameMaterial = (
+    <meshStandardMaterial
+      color="#c9cdd3"
+      map={metal.map}
+      roughnessMap={metal.roughnessMap}
+      metalness={0.85}
+      roughness={0.32}
+    />
+  );
+
+  return (
+    <group>
+      {/* Legs and feet. */}
+      {[-legZ, legZ].map((z) => (
+        <group key={`wb-leg-${z}`}>
+          <mesh position={[0, 0.2, z]} castShadow receiveShadow>
+            <boxGeometry args={[0.035, 0.4, 0.045]} />
+            {frameMaterial}
+          </mesh>
+          <mesh position={[0, 0.015, z]} castShadow receiveShadow>
+            <boxGeometry args={[Math.min(widthWorld * 0.85, 0.16), 0.03, 0.06]} />
+            {frameMaterial}
+          </mesh>
+        </group>
+      ))}
+      {/* Glossy white board surface. */}
+      <mesh position={[0, boardCenterY, 0]} castShadow receiveShadow>
+        <boxGeometry args={[boardThickness, boardHeight, boardLength]} />
+        <meshStandardMaterial
+          color="#f8f8f5"
+          roughness={0.15}
+          metalness={0.02}
+          emissive={highlightColor}
+          emissiveIntensity={highlightIntensity}
+        />
+      </mesh>
+      {/* Rounded aluminum frame. */}
+      {[
+        boardCenterY + boardHeight / 2 + frameThickness / 2,
+        boardCenterY - boardHeight / 2 - frameThickness / 2,
+      ].map((y) => (
+        <mesh key={`wb-rail-${y}`} position={[0, y, 0]} castShadow receiveShadow>
+          <boxGeometry
+            args={[
+              boardThickness + 0.012,
+              frameThickness,
+              boardLength + frameThickness * 2,
+            ]}
+          />
+          {frameMaterial}
+        </mesh>
+      ))}
+      {[-1, 1].map((side) => (
+        <mesh
+          key={`wb-frame-end-${side}`}
+          position={[0, boardCenterY, side * (boardLength / 2 + frameThickness / 2)]}
+          castShadow
+          receiveShadow
+        >
+          <boxGeometry
+            args={[boardThickness + 0.012, boardHeight, frameThickness]}
+          />
+          {frameMaterial}
+        </mesh>
+      ))}
+      {/* Marker strokes flush on the board surface. */}
+      {WHITEBOARD_STROKES.map((stroke, index) => (
+        <mesh
+          key={`wb-stroke-${index}`}
+          position={[strokeX, stroke.y, stroke.z * (boardLength / 1.08)]}
+        >
+          <boxGeometry
+            args={[0.004, 0.016, stroke.length * (boardLength / 1.08)]}
+          />
+          <meshStandardMaterial color={stroke.color} roughness={0.5} />
+        </mesh>
+      ))}
+      {/* Marker tray with two markers. */}
+      <mesh
+        position={[boardThickness / 2 + 0.028, trayY, 0]}
+        castShadow
+        receiveShadow
+      >
+        <boxGeometry args={[0.055, 0.014, boardLength * 0.55]} />
+        {frameMaterial}
+      </mesh>
+      <mesh
+        position={[boardThickness / 2 + 0.03, trayY + 0.016, -0.08]}
+        rotation={[Math.PI / 2, 0, 0]}
+        castShadow
+      >
+        <cylinderGeometry args={[0.009, 0.009, 0.08, 10]} />
+        <meshStandardMaterial color="#c0392b" roughness={0.42} />
+      </mesh>
+      <mesh
+        position={[boardThickness / 2 + 0.03, trayY + 0.016, 0.05]}
+        rotation={[Math.PI / 2, 0, 0]}
+        castShadow
+      >
+        <cylinderGeometry args={[0.009, 0.009, 0.08, 10]} />
+        <meshStandardMaterial color="#2563a8" roughness={0.42} />
+      </mesh>
+    </group>
+  );
+}
+
+/**
+ * Free-standing water cooler with a translucent blue bottle, sized to stay
+ * inside the item footprint.
+ */
+function WaterCoolerProceduralModel({
+  widthWorld,
+  depthWorld,
+  highlightColor,
+  highlightIntensity,
+}: ProceduralModelProps) {
+  const metal = useMemo(() => getBrushedMetalTextures(), []);
+  const bodyW = Math.min(widthWorld, depthWorld) * 0.78;
+  const bodyD = bodyW;
+  const bodyH = 0.56;
+  const bottleRadius = bodyW * 0.36;
+
+  return (
+    <group>
+      {/* Base plinth. */}
+      <mesh position={[0, 0.025, 0]} castShadow receiveShadow>
+        <boxGeometry args={[bodyW + 0.015, 0.05, bodyD + 0.015]} />
+        <meshStandardMaterial color="#9aa0a6" roughness={0.55} metalness={0.3} />
+      </mesh>
+      {/* Main body. */}
+      <mesh position={[0, 0.05 + bodyH / 2, 0]} castShadow receiveShadow>
+        <boxGeometry args={[bodyW, bodyH, bodyD]} />
+        <meshStandardMaterial
+          color="#eceef0"
+          roughness={0.38}
+          metalness={0.06}
+          emissive={highlightColor}
+          emissiveIntensity={highlightIntensity}
+        />
+      </mesh>
+      {/* Drip tray recess on the front face. */}
+      <mesh position={[0, 0.36, bodyD / 2 + 0.006]} receiveShadow>
+        <boxGeometry args={[bodyW * 0.72, 0.1, 0.012]} />
+        <meshStandardMaterial
+          color="#c6cacd"
+          map={metal.map}
+          roughnessMap={metal.roughnessMap}
+          metalness={0.7}
+          roughness={0.4}
+        />
+      </mesh>
+      {/* Two taps with colored handles. */}
+      {[
+        { handle: "#2563a8", x: -bodyW * 0.2 },
+        { handle: "#c0392b", x: bodyW * 0.2 },
+      ].map((tap) => (
+        <group key={`wc-tap-${tap.handle}`} position={[tap.x, 0.47, bodyD / 2]}>
+          <mesh position={[0, 0, 0.02]} rotation={[Math.PI / 2, 0, 0]} castShadow>
+            <cylinderGeometry args={[0.011, 0.011, 0.045, 10]} />
+            <meshStandardMaterial
+              color="#d8dcde"
+              map={metal.map}
+              roughnessMap={metal.roughnessMap}
+              metalness={0.8}
+              roughness={0.3}
+            />
+          </mesh>
+          <mesh position={[0, 0.022, 0.036]} castShadow>
+            <boxGeometry args={[0.028, 0.022, 0.018]} />
+            <meshStandardMaterial color={tap.handle} roughness={0.45} />
+          </mesh>
+        </group>
+      ))}
+      {/* Collar between body and bottle. */}
+      <mesh position={[0, 0.05 + bodyH + 0.02, 0]} castShadow receiveShadow>
+        <cylinderGeometry args={[bottleRadius + 0.02, bodyW * 0.46, 0.05, 20]} />
+        <meshStandardMaterial color="#dfe2e5" roughness={0.4} metalness={0.1} />
+      </mesh>
+      {/* Translucent blue bottle. */}
+      <mesh position={[0, 0.05 + bodyH + 0.045 + 0.13, 0]} castShadow>
+        <cylinderGeometry args={[bottleRadius, bottleRadius * 0.86, 0.26, 20]} />
+        <meshPhysicalMaterial
+          color="#4aa8e0"
+          transparent
+          opacity={0.35}
+          roughness={0.1}
+          metalness={0}
+        />
+      </mesh>
+      <mesh position={[0, 0.05 + bodyH + 0.045 + 0.27, 0]} castShadow>
+        <cylinderGeometry
+          args={[bottleRadius * 0.4, bottleRadius * 0.8, 0.04, 16]}
+        />
+        <meshPhysicalMaterial
+          color="#4aa8e0"
+          transparent
+          opacity={0.35}
+          roughness={0.1}
+          metalness={0}
+        />
+      </mesh>
+      {/* Cup dispenser tube on the front-left corner. */}
+      <mesh position={[-bodyW * 0.26, 0.38, bodyD / 2 + 0.045]} castShadow>
+        <cylinderGeometry args={[0.026, 0.026, 0.32, 12]} />
+        <meshStandardMaterial
+          color="#f4f5f6"
+          transparent
+          opacity={0.85}
+          roughness={0.25}
+          metalness={0.05}
+        />
+      </mesh>
+    </group>
+  );
+}
 
 export function InstancedFurnitureItems({
   itemType,
@@ -317,6 +583,16 @@ export function FurnitureModel({
   const { width, height } = getItemBaseSize(item);
   const pivotX = width * SCALE * 0.5;
   const pivotZ = height * SCALE * 0.5;
+  const highlightColor = isSelected
+    ? "#fbbf24"
+    : isHovered && editMode
+      ? "#4a90d9"
+      : "#000000";
+  const highlightIntensity = isSelected
+    ? 0.35
+    : isHovered && editMode
+      ? 0.25
+      : 0;
   const kanbanDeskLoadout = useMemo(() => {
     const visibleTaskCount = Math.max(0, Math.min(kanbanTaskCount, 12));
     if (visibleTaskCount === 0) {
@@ -518,9 +794,25 @@ export function FurnitureModel({
       }}
     >
       <group position={[pivotX, 0, pivotZ]} rotation={[0, rotY, 0]}>
-        <group position={[-pivotX, 0, -pivotZ]} scale={scale}>
-          <primitive object={cloned} />
-        </group>
+        {itemType === "whiteboard" ? (
+          <WhiteboardProceduralModel
+            widthWorld={width * SCALE}
+            depthWorld={height * SCALE}
+            highlightColor={highlightColor}
+            highlightIntensity={highlightIntensity}
+          />
+        ) : itemType === "water_cooler" ? (
+          <WaterCoolerProceduralModel
+            widthWorld={width * SCALE}
+            depthWorld={height * SCALE}
+            highlightColor={highlightColor}
+            highlightIntensity={highlightIntensity}
+          />
+        ) : (
+          <group position={[-pivotX, 0, -pivotZ]} scale={scale}>
+            <primitive object={cloned} />
+          </group>
+        )}
         {itemType === "kanban_board" ? (
           <>
             {kanbanTaskCount > 0 ? (
@@ -738,11 +1030,38 @@ export function PlacementGhost({
   const cloned = useMemo(() => template.clone(true), [template]);
   const scale = FURNITURE_SCALE[itemType] ?? [1, 1, 1];
   const rotY = FURNITURE_ROTATION[itemType] ?? 0;
+  const footprint = ITEM_FOOTPRINT[itemType] ?? [40, 40];
 
   return (
-    <group position={position} rotation={[0, rotY, 0]} scale={scale}>
-      <primitive object={cloned} />
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.01, 0]}>
+    <group position={position} rotation={[0, rotY, 0]}>
+      {itemType === "whiteboard" ? (
+        <WhiteboardProceduralModel
+          widthWorld={footprint[0] * SCALE}
+          depthWorld={footprint[1] * SCALE}
+          highlightColor="#000000"
+          highlightIntensity={0}
+        />
+      ) : itemType === "water_cooler" ? (
+        <WaterCoolerProceduralModel
+          widthWorld={footprint[0] * SCALE}
+          depthWorld={footprint[1] * SCALE}
+          highlightColor="#000000"
+          highlightIntensity={0}
+        />
+      ) : (
+        <group scale={scale}>
+          <primitive object={cloned} />
+        </group>
+      )}
+      <mesh
+        rotation={[-Math.PI / 2, 0, 0]}
+        position={[0, 0.01, 0]}
+        scale={
+          itemType === "whiteboard" || itemType === "water_cooler"
+            ? [1, 1, 1]
+            : [scale[0], scale[2], 1]
+        }
+      >
         <planeGeometry args={[0.8, 0.8]} />
         <meshBasicMaterial color="#fbbf24" transparent opacity={0.25} />
       </mesh>

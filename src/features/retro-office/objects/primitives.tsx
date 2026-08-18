@@ -10,6 +10,12 @@ import {
   WALL_THICKNESS,
 } from "@/features/retro-office/core/constants";
 import { getItemRotationRadians, toWorld } from "@/features/retro-office/core/geometry";
+import {
+  getBrushedMetalTextures,
+  getPlasterTextures,
+  getWoodFloorTextures,
+  withRepeat,
+} from "@/features/retro-office/core/proceduralTextures";
 import type { FurnitureItem, RenderAgent } from "@/features/retro-office/core/types";
 import type {
   BasicFurnitureModelProps,
@@ -26,6 +32,7 @@ export function InstancedWallSegmentsModel({
   items: FurnitureItem[];
 }) {
   const meshRef = useRef<THREE.InstancedMesh>(null);
+  const plaster = useMemo(() => withRepeat(getPlasterTextures(), 2, 1), []);
   const matrices = useMemo(() => {
     const tempQuaternion = new THREE.Quaternion();
     const tempPosition = new THREE.Vector3();
@@ -58,9 +65,20 @@ export function InstancedWallSegmentsModel({
   if (items.length === 0) return null;
 
   return (
-    <instancedMesh ref={meshRef} args={[undefined, undefined, items.length]} receiveShadow>
+    <instancedMesh
+      ref={meshRef}
+      args={[undefined, undefined, items.length]}
+      castShadow
+      receiveShadow
+    >
       <boxGeometry args={[1, 1, 1]} />
-      <meshStandardMaterial color="#787878" roughness={0.92} />
+      <meshStandardMaterial
+        color="#e9e4da"
+        map={plaster.map}
+        roughnessMap={plaster.roughnessMap}
+        normalMap={plaster.normalMap}
+        roughness={0.92}
+      />
     </instancedMesh>
   );
 }
@@ -79,6 +97,8 @@ export function RoundTableModel({
   const radius = (item.r ?? 60) * SCALE;
   const height = 0.5;
   const topThickness = 0.04;
+  const wood = useMemo(() => withRepeat(getWoodFloorTextures(), 1.5, 1.5), []);
+  const metal = useMemo(() => getBrushedMetalTextures(), []);
   const highlightColor = isSelected
     ? "#fbbf24"
     : isHovered && editMode
@@ -110,20 +130,35 @@ export function RoundTableModel({
         <mesh position={[0, height, 0]} receiveShadow castShadow>
           <cylinderGeometry args={[radius, radius, topThickness, 64]} />
           <meshStandardMaterial
-            color="#9a6332"
-            roughness={0.6}
-            metalness={0.1}
+            color="#b07a45"
+            map={wood.map}
+            roughnessMap={wood.roughnessMap}
+            normalMap={wood.normalMap}
+            roughness={0.55}
+            metalness={0.05}
             emissive={highlightColor}
             emissiveIntensity={highlightIntensity}
           />
         </mesh>
-        <mesh position={[0, height / 2, 0]} castShadow>
+        <mesh position={[0, height / 2, 0]} castShadow receiveShadow>
           <cylinderGeometry args={[0.06, 0.06, height, 16]} />
-          <meshStandardMaterial color="#5c3520" roughness={0.8} />
+          <meshStandardMaterial
+            color="#7d838c"
+            map={metal.map}
+            roughnessMap={metal.roughnessMap}
+            metalness={0.85}
+            roughness={0.35}
+          />
         </mesh>
-        <mesh position={[0, 0.02, 0]}>
+        <mesh position={[0, 0.02, 0]} castShadow receiveShadow>
           <cylinderGeometry args={[radius * 0.4, radius * 0.45, 0.04, 32]} />
-          <meshStandardMaterial color="#5c3520" roughness={0.8} />
+          <meshStandardMaterial
+            color="#6c727a"
+            map={metal.map}
+            roughnessMap={metal.roughnessMap}
+            metalness={0.85}
+            roughness={0.4}
+          />
         </mesh>
       </group>
     </group>
@@ -144,6 +179,7 @@ export function WallSegmentModel({
   const width = (item.w ?? 80) * SCALE;
   const depth = (item.h ?? WALL_THICKNESS) * SCALE;
   const rotY = getItemRotationRadians(item);
+  const plaster = useMemo(() => withRepeat(getPlasterTextures(), 2, 1), []);
   const highlightColor = isSelected
     ? "#fbbf24"
     : isHovered && editMode
@@ -172,18 +208,21 @@ export function WallSegmentModel({
       }}
     >
       <group position={[width / 2, 0, depth / 2]} rotation={[0, rotY, 0]}>
-        <mesh position={[0, 0.5, 0]} receiveShadow>
+        <mesh position={[0, 0.5, 0]} castShadow receiveShadow>
           <boxGeometry args={[width, 1, depth]} />
           <meshStandardMaterial
-            color="#787878"
+            color="#e9e4da"
+            map={plaster.map}
+            roughnessMap={plaster.roughnessMap}
+            normalMap={plaster.normalMap}
             emissive={highlightColor}
             emissiveIntensity={0.4 + highlightIntensity}
             roughness={0.92}
           />
         </mesh>
-        <mesh position={[0, 0.03, 0]}>
+        <mesh position={[0, 0.03, 0]} receiveShadow>
           <boxGeometry args={[width + 0.02, 0.06, Math.max(depth, 0.06)]} />
-          <meshStandardMaterial color="#0c0c10" roughness={0.8} />
+          <meshStandardMaterial color="#1d1e24" roughness={0.7} />
         </mesh>
       </group>
     </group>
@@ -213,6 +252,8 @@ export function DoorModel({
   const highlightIntensity = isSelected ? 0.35 : isHovered && editMode ? 0.22 : 0;
   const handleX = width - 0.09;
   const handleZ = Math.max(depth * 0.28, 0.035);
+  const wood = useMemo(() => withRepeat(getWoodFloorTextures(), 0.5, 0.5), []);
+  const metal = useMemo(() => getBrushedMetalTextures(), []);
   const leafPivotRef = useRef<THREE.Group>(null);
   const openAmountRef = useRef(0);
 
@@ -258,39 +299,78 @@ export function DoorModel({
       }}
     >
       <group position={[width / 2, 0, depth / 2]} rotation={[0, rotY, 0]}>
-        <mesh position={[0, 1.01, 0]}>
+        <mesh position={[0, 1.01, 0]} castShadow receiveShadow>
           <boxGeometry args={[width + 0.05, 0.08, depth + 0.04]} />
-          <meshStandardMaterial color="#4a3421" roughness={0.88} />
+          <meshStandardMaterial
+            color="#6b4c30"
+            map={wood.map}
+            roughnessMap={wood.roughnessMap}
+            normalMap={wood.normalMap}
+            roughness={0.78}
+          />
         </mesh>
-        <mesh position={[-width / 2 + 0.02, 0.5, 0]}>
+        <mesh position={[-width / 2 + 0.02, 0.5, 0]} castShadow receiveShadow>
           <boxGeometry args={[0.04, 1, depth + 0.03]} />
-          <meshStandardMaterial color="#4a3421" roughness={0.88} />
+          <meshStandardMaterial
+            color="#6b4c30"
+            map={wood.map}
+            roughnessMap={wood.roughnessMap}
+            normalMap={wood.normalMap}
+            roughness={0.78}
+          />
         </mesh>
-        <mesh position={[width / 2 - 0.02, 0.5, 0]}>
+        <mesh position={[width / 2 - 0.02, 0.5, 0]} castShadow receiveShadow>
           <boxGeometry args={[0.04, 1, depth + 0.03]} />
-          <meshStandardMaterial color="#4a3421" roughness={0.88} />
+          <meshStandardMaterial
+            color="#6b4c30"
+            map={wood.map}
+            roughnessMap={wood.roughnessMap}
+            normalMap={wood.normalMap}
+            roughness={0.78}
+          />
         </mesh>
         <group ref={leafPivotRef} position={[-width / 2 + 0.025, 0, 0]}>
-          <mesh position={[width / 2 - 0.035, 0.5, 0]} receiveShadow>
+          <mesh position={[width / 2 - 0.035, 0.5, 0]} castShadow receiveShadow>
             <boxGeometry args={[Math.max(width - 0.09, 0.08), 0.94, depth * 0.68]} />
             <meshStandardMaterial
-              color="#7c5330"
+              color="#9a6a3f"
+              map={wood.map}
+              roughnessMap={wood.roughnessMap}
+              normalMap={wood.normalMap}
               emissive={highlightColor}
               emissiveIntensity={0.28 + highlightIntensity}
-              roughness={0.74}
+              roughness={0.62}
             />
           </mesh>
-          <mesh position={[handleX, 0.52, 0]}>
+          <mesh position={[handleX, 0.52, 0]} castShadow>
             <cylinderGeometry args={[0.008, 0.008, handleZ * 2.1, 10]} />
-            <meshStandardMaterial color="#9f8141" roughness={0.4} metalness={0.45} />
+            <meshStandardMaterial
+              color="#c9b06a"
+              map={metal.map}
+              roughnessMap={metal.roughnessMap}
+              roughness={0.3}
+              metalness={0.85}
+            />
           </mesh>
-          <mesh position={[handleX, 0.52, handleZ]}>
+          <mesh position={[handleX, 0.52, handleZ]} castShadow>
             <sphereGeometry args={[0.025, 12, 12]} />
-            <meshStandardMaterial color="#d9bf72" roughness={0.36} metalness={0.35} />
+            <meshStandardMaterial
+              color="#e3ca7e"
+              map={metal.map}
+              roughnessMap={metal.roughnessMap}
+              roughness={0.28}
+              metalness={0.8}
+            />
           </mesh>
-          <mesh position={[handleX, 0.52, -handleZ]}>
+          <mesh position={[handleX, 0.52, -handleZ]} castShadow>
             <sphereGeometry args={[0.025, 12, 12]} />
-            <meshStandardMaterial color="#d9bf72" roughness={0.36} metalness={0.35} />
+            <meshStandardMaterial
+              color="#e3ca7e"
+              map={metal.map}
+              roughnessMap={metal.roughnessMap}
+              roughness={0.28}
+              metalness={0.8}
+            />
           </mesh>
         </group>
       </group>
@@ -307,6 +387,7 @@ export function KeyboardModel({
 }: BasicFurnitureModelProps) {
   const [wx, , wz] = toWorld(item.x, item.y);
   const yBase = 0.621;
+  const metal = useMemo(() => getBrushedMetalTextures(), []);
 
   return (
     <group
@@ -327,11 +408,17 @@ export function KeyboardModel({
         onPointerOut?.();
       }}
     >
-      <mesh>
+      <mesh castShadow receiveShadow>
         <boxGeometry args={[0.27, 0.022, 0.105]} />
-        <meshStandardMaterial color="#b2bac4" roughness={0.7} metalness={0.05} />
+        <meshStandardMaterial
+          color="#b2bac4"
+          map={metal.map}
+          roughnessMap={metal.roughnessMap}
+          roughness={0.4}
+          metalness={0.75}
+        />
       </mesh>
-      <mesh position={[0, 0.018, 0]}>
+      <mesh position={[0, 0.018, 0]} castShadow>
         <boxGeometry args={[0.23, 0.008, 0.08]} />
         <meshStandardMaterial color="#2e333d" roughness={0.85} metalness={0.02} />
       </mesh>
@@ -368,13 +455,13 @@ export function MouseModel({
         onPointerOut?.();
       }}
     >
-      <mesh scale={[1, 0.38, 0.72]}>
+      <mesh scale={[1, 0.38, 0.72]} castShadow receiveShadow>
         <sphereGeometry args={[0.042, 8, 6]} />
-        <meshStandardMaterial color="#d0cecc" roughness={0.6} metalness={0.1} />
+        <meshStandardMaterial color="#d0cecc" roughness={0.35} metalness={0.1} />
       </mesh>
       <mesh position={[0, 0.016, -0.008]} rotation={[Math.PI / 2, 0, 0]}>
         <cylinderGeometry args={[0.007, 0.007, 0.022, 8]} />
-        <meshStandardMaterial color="#444" roughness={0.8} />
+        <meshStandardMaterial color="#444" roughness={0.6} />
       </mesh>
     </group>
   );
@@ -409,25 +496,40 @@ export function ClockModel({
         onPointerOut?.();
       }}
     >
-      <mesh rotation={[-Math.PI / 2, 0, 0]}>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} castShadow>
         <cylinderGeometry args={[0.09, 0.09, 0.016, 20]} />
-        <meshStandardMaterial color="#f5f0e8" roughness={0.55} metalness={0.05} />
+        <meshStandardMaterial color="#f5f0e8" roughness={0.3} metalness={0.05} />
       </mesh>
-      <mesh rotation={[-Math.PI / 2, 0, 0]}>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} castShadow>
         <torusGeometry args={[0.09, 0.011, 8, 24]} />
-        <meshStandardMaterial color="#2a2a2a" roughness={0.7} />
+        <meshStandardMaterial color="#2a2a2a" roughness={0.5} metalness={0.4} />
       </mesh>
       <mesh position={[-0.028, 0.014, -0.012]} rotation={[0, Math.PI / 6, 0]}>
         <boxGeometry args={[0.008, 0.006, 0.052]} />
-        <meshStandardMaterial color="#1a1a1a" roughness={0.8} />
+        <meshStandardMaterial
+          color="#1a1a1a"
+          emissive="#3a4048"
+          emissiveIntensity={0.5}
+          roughness={0.6}
+        />
       </mesh>
       <mesh position={[0.018, 0.016, -0.018]} rotation={[0, -Math.PI / 5, 0]}>
         <boxGeometry args={[0.006, 0.006, 0.068]} />
-        <meshStandardMaterial color="#1a1a1a" roughness={0.8} />
+        <meshStandardMaterial
+          color="#1a1a1a"
+          emissive="#3a4048"
+          emissiveIntensity={0.5}
+          roughness={0.6}
+        />
       </mesh>
       <mesh position={[0, 0.018, 0]}>
         <sphereGeometry args={[0.008, 8, 8]} />
-        <meshStandardMaterial color="#c0392b" roughness={0.5} />
+        <meshStandardMaterial
+          color="#c0392b"
+          emissive="#c0392b"
+          emissiveIntensity={0.6}
+          roughness={0.4}
+        />
       </mesh>
     </group>
   );
@@ -441,6 +543,7 @@ export function TrashCanModel({
   editMode,
 }: BasicFurnitureModelProps) {
   const [wx, , wz] = toWorld(item.x, item.y);
+  const metal = useMemo(() => getBrushedMetalTextures(), []);
 
   return (
     <group
@@ -461,13 +564,25 @@ export function TrashCanModel({
         onPointerOut?.();
       }}
     >
-      <mesh position={[0, 0.115, 0]}>
+      <mesh position={[0, 0.115, 0]} castShadow receiveShadow>
         <cylinderGeometry args={[0.055, 0.042, 0.23, 10]} />
-        <meshStandardMaterial color="#4a4e58" roughness={0.8} metalness={0.12} />
+        <meshStandardMaterial
+          color="#6e747e"
+          map={metal.map}
+          roughnessMap={metal.roughnessMap}
+          roughness={0.35}
+          metalness={0.85}
+        />
       </mesh>
-      <mesh position={[0, 0.234, 0]}>
+      <mesh position={[0, 0.234, 0]} castShadow>
         <cylinderGeometry args={[0.057, 0.057, 0.01, 10]} />
-        <meshStandardMaterial color="#363940" roughness={0.7} metalness={0.18} />
+        <meshStandardMaterial
+          color="#565b63"
+          map={metal.map}
+          roughnessMap={metal.roughnessMap}
+          roughness={0.3}
+          metalness={0.9}
+        />
       </mesh>
     </group>
   );
@@ -502,13 +617,25 @@ export function MugModel({
         onPointerOut?.();
       }}
     >
-      <mesh>
+      <mesh castShadow>
         <cylinderGeometry args={[0.025, 0.022, 0.052, 10]} />
-        <meshStandardMaterial color="#e8ded0" roughness={0.6} metalness={0.02} />
+        <meshPhysicalMaterial
+          color="#e8ded0"
+          roughness={0.12}
+          metalness={0.02}
+          clearcoat={0.7}
+          clearcoatRoughness={0.15}
+        />
       </mesh>
-      <mesh position={[0.033, 0, 0]} rotation={[0, 0, -Math.PI / 2]}>
+      <mesh position={[0.033, 0, 0]} rotation={[0, 0, -Math.PI / 2]} castShadow>
         <torusGeometry args={[0.016, 0.006, 6, 12, Math.PI]} />
-        <meshStandardMaterial color="#e8ded0" roughness={0.6} metalness={0.02} />
+        <meshPhysicalMaterial
+          color="#e8ded0"
+          roughness={0.12}
+          metalness={0.02}
+          clearcoat={0.7}
+          clearcoatRoughness={0.15}
+        />
       </mesh>
     </group>
   );
