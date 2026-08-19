@@ -220,6 +220,28 @@ Run this checklist in order:
 
 ## 9) Troubleshooting
 
+### Connecting to the hermes-agent dashboard port (`9119`) instead of the adapter
+
+This is the most common wrong turn, because `9119` is the port the
+hermes-agent dashboard prints on startup.
+
+Hermes3D cannot connect to it. That port serves the dashboard's JSON-RPC 2.0
+gateway on `/api/ws`, guarded by single-use tickets, and it does not terminate
+TLS. Hermes3D speaks a different protocol: it sends a `connect` frame and waits
+for `hello-ok`. Even with correct credentials the handshake never completes, so
+no username, password, or token will make `wss://<host>:9119` work.
+
+Point Hermes3D at `npm run hermes-adapter` instead, as in sections 2 and 4. The
+adapter is the component that speaks the Hermes3D gateway protocol, and it
+reaches Hermes over the OpenAI-compatible HTTP API on port `8642`.
+
+The dashboard username and password are unrelated to Hermes3D. They belong to
+`HERMES_DASHBOARD_BASIC_AUTH_USERNAME` / `_PASSWORD` and only gate the
+hermes-agent web dashboard. If your Hermes API requires a credential, that is
+`HERMES_API_KEY` on the adapter.
+
+`npm run doctor` flags this URL shape, and so does the connect screen.
+
 ### `EPROTO` or `wrong version number`
 
 - Usually means protocol mismatch.

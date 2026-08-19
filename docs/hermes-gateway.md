@@ -61,7 +61,32 @@ In the connect screen, select `Hermes backend`. Hermes3D will persist that
 selection in Studio settings and show `Hermes` as the active backend once
 the adapter hello response is received.
 
-### 4. Optional all-in-one local startup
+### 4. Remote Hermes on another machine
+
+The adapter and Hermes3D do not have to run where Hermes runs. Pick whichever
+side of the link you would rather keep private.
+
+**Adapter next to Hermes3D.** Only the Hermes HTTP API crosses the network, and
+nothing extra runs on the Hermes host:
+
+```text
+Browser <-> Studio <-> adapter (localhost:18789) <-> Hermes HTTP API (remote:8642)
+```
+
+Bind the Hermes API to the tailnet on the Hermes host, then on the Hermes3D
+machine set `HERMES_API_URL` to the remote address and connect to
+`ws://localhost:18789`.
+
+**Adapter next to Hermes.** The gateway protocol crosses the network, so the
+adapter needs to be published. Keep it on loopback and expose it with Tailscale
+Serve, then connect to `wss://<tailnet-host>` with no port. Full walkthrough in
+[`TUTORIAL.md`](../TUTORIAL.md).
+
+Do not point the gateway URL at port `9119`. That is the hermes-agent
+dashboard's JSON-RPC endpoint, not a Hermes3D gateway, and the two protocols are
+not compatible. See the troubleshooting section of the tutorial.
+
+### 5. Optional all-in-one local startup
 
 The repo also includes:
 
