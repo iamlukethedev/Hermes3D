@@ -204,11 +204,11 @@ describe("useGatewayConnection", () => {
         settings: {
           version: 1,
           gateway: {
-            url: "wss://pi5.myth-coho.ts.net",
+            url: "wss://box.ts.net",
             token: "shared-token",
             adapterType: "hermes",
             lastKnownGood: {
-              url: "wss://pi5.myth-coho.ts.net",
+              url: "wss://box.ts.net",
               token: "shared-token",
               adapterType: "hermes",
             },
@@ -238,7 +238,7 @@ describe("useGatewayConnection", () => {
     await waitFor(() => {
       expect(captured.url).toBe("ws://localhost:3000/api/gateway/ws");
     });
-    expect(captured.authScopeKey).toBe("wss://pi5.myth-coho.ts.net");
+    expect(captured.authScopeKey).toBe("wss://box.ts.net");
     expect(captured.clientName).toBe("hermes3d-control-ui");
   });
 

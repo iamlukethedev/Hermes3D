@@ -27,7 +27,7 @@ describe("GatewayConnectScreen upstream URL findings", () => {
   });
 
   it("warns before connecting when pointed at the hermes-agent dashboard port", () => {
-    renderScreen("wss://luke-hermes.taildb786a.ts.net:9119");
+    renderScreen("wss://box.ts.net:9119");
 
     const dashboardFinding = screen.getByTestId("gateway-url-finding-hermes_agent_dashboard_port");
     expect(dashboardFinding.textContent).toMatch(/JSON-RPC 2\.0/);
@@ -36,7 +36,7 @@ describe("GatewayConnectScreen upstream URL findings", () => {
   });
 
   it("stays quiet for a valid adapter URL", () => {
-    renderScreen("wss://luke-hermes.taildb786a.ts.net");
+    renderScreen("wss://box.ts.net");
 
     expect(screen.queryByLabelText("Gateway URL warnings")).toBeNull();
   });

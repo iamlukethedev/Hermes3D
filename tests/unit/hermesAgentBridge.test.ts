@@ -162,7 +162,7 @@ describe("loopback Host fallback", () => {
 
     // 127.0.0.1 resolves, but the Host header carries a name the backend rejects.
     const client = new HermesAgentJsonRpcClient({ url: `ws://127.0.0.1:${port}`, token: "t" });
-    client.hostHeader = "luke-hermes.taildb786a.ts.net";
+    client.hostHeader = "box.ts.net";
     client.loopbackHostFallback = true;
 
     const ready = new Promise<void>((resolve, reject) => {
@@ -173,7 +173,7 @@ describe("loopback Host fallback", () => {
     client.connect();
     await ready;
 
-    expect(hostsSeen[0]).toBe("luke-hermes.taildb786a.ts.net");
+    expect(hostsSeen[0]).toBe("box.ts.net");
     expect(hostsSeen[1]).toBe("localhost");
     expect(client.usedLoopbackHost).toBe(true);
     client.terminate();
@@ -200,7 +200,7 @@ describe("loopback Host fallback", () => {
 
     const { HermesAgentJsonRpcClient } = await import("../../server/hermes-agent/jsonrpc-client");
     const client = new HermesAgentJsonRpcClient({ url: `ws://127.0.0.1:${port}`, token: "t" });
-    client.hostHeader = "luke-hermes.taildb786a.ts.net";
+    client.hostHeader = "box.ts.net";
 
     const ready = new Promise<void>((resolve, reject) => {
       client.on("ready", () => resolve());
@@ -210,7 +210,7 @@ describe("loopback Host fallback", () => {
     client.connect();
     await ready;
 
-    expect(hostsSeen[0]).toBe("luke-hermes.taildb786a.ts.net");
+    expect(hostsSeen[0]).toBe("box.ts.net");
     expect(hostsSeen[1]).toBe("localhost");
     client.terminate();
   });
