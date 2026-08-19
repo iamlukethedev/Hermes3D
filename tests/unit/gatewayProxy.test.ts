@@ -105,6 +105,55 @@ describe("createGatewayProxy", () => {
     }
   });
 
+  it("surfaces the hermes-agent bridge's own reason instead of a generic transport error", async () => {
+    // Bind and immediately release a port so the bridge's connection is refused
+    // with a specific errno rather than hanging.
+    const probe = new WebSocketServer({ port: 0 });
+    const probeAddress = probe.address();
+    if (!probeAddress || typeof probeAddress === "string") {
+      throw new Error("expected probe server to have a port");
+    }
+    const deadPort = probeAddress.port;
+    await closeWebSocketServer(probe);
+
+    const { createGatewayProxy } = await import("../../server/gateway-proxy");
+
+    const proxyHttp = await import("node:http").then((m) => m.createServer());
+    const proxy = createGatewayProxy({
+      loadUpstreamSettings: async () => ({
+        url: `http://127.0.0.1:${deadPort}`,
+        token: "",
+        adapterType: "hermes-agent",
+      }),
+      allowWs: (req: { url?: string }) => req.url === "/api/gateway/ws",
+      logError: () => {},
+    });
+    proxyHttp.on("upgrade", (req, socket, head) => proxy.handleUpgrade(req, socket, head));
+
+    await new Promise<void>((resolve) => proxyHttp.listen(0, "127.0.0.1", resolve));
+    const proxyAddr = proxyHttp.address();
+    if (!proxyAddr || typeof proxyAddr === "string") {
+      throw new Error("expected proxy server to have a port");
+    }
+
+    const browser = new WebSocket(`ws://127.0.0.1:${proxyAddr.port}/api/gateway/ws`);
+    try {
+      await waitForEvent(browser, "open");
+      browser.send(
+        JSON.stringify({ type: "req", id: "connect-1", method: "connect", params: {} })
+      );
+
+      const [raw] = await waitForEvent<[Buffer]>(browser, "message");
+      const frame = JSON.parse(String(raw));
+
+      expect(frame.ok).toBe(false);
+      expect(frame.error.message).not.toBe("Failed to connect to upstream gateway WebSocket.");
+      expect(frame.error.message).toMatch(/ECONNREFUSED|connect/i);
+    } finally {
+      await Promise.all([closeWebSocket(browser), closeHttpServer(proxyHttp)]);
+    }
+  });
+
   it("forwards upstream connect.challenge before browser connect and then passes nonce-based device auth", async () => {
     const upstream = new WebSocketServer({ port: 0 });
     const address = upstream.address();

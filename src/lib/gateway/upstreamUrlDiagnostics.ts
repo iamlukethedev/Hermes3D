@@ -41,7 +41,10 @@ const HERMES_AGENT_ENDPOINT_FIX =
 const isTailnetHostname = (hostname: string) =>
   hostname === "ts.net" || hostname.endsWith(".ts.net");
 
-export const inspectUpstreamGatewayUrl = (rawUrl: unknown): UpstreamUrlFinding[] => {
+export const inspectUpstreamGatewayUrl = (
+  rawUrl: unknown,
+  adapterType: unknown = ""
+): UpstreamUrlFinding[] => {
   const url = typeof rawUrl === "string" ? rawUrl.trim() : "";
   if (!url) return [];
 
@@ -58,7 +61,13 @@ export const inspectUpstreamGatewayUrl = (rawUrl: unknown): UpstreamUrlFinding[]
   const port = parsed.port;
   const path = parsed.pathname.replace(/\/+$/, "");
 
-  if (port === HERMES_AGENT_DASHBOARD_PORT) {
+  // The hermes-agent adapter targets that dashboard on purpose: Studio
+  // translates JSON-RPC in-process, so the endpoint these rules warn about is
+  // exactly the right one to point at.
+  const targetsHermesAgent =
+    (typeof adapterType === "string" ? adapterType.trim().toLowerCase() : "") === "hermes-agent";
+
+  if (!targetsHermesAgent && port === HERMES_AGENT_DASHBOARD_PORT) {
     findings.push({
       code: "hermes_agent_dashboard_port",
       severity: "error",
@@ -69,7 +78,7 @@ export const inspectUpstreamGatewayUrl = (rawUrl: unknown): UpstreamUrlFinding[]
     });
   }
 
-  if (path === HERMES_AGENT_WS_PATH) {
+  if (!targetsHermesAgent && path === HERMES_AGENT_WS_PATH) {
     findings.push({
       code: "hermes_agent_jsonrpc_path",
       severity: "error",

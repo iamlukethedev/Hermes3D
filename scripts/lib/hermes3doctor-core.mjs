@@ -6,6 +6,7 @@ export const DOCTOR_STATUSES = {
 
 const VALID_ADAPTER_TYPES = new Set([
   "hermes",
+  "hermes-agent",
   "demo",
   "local",
   "hermes3d",
@@ -15,6 +16,7 @@ const TUNNEL_HOST_PATTERN =
   /(cloudflare|trycloudflare|ngrok|tailscale|tunnel)/i;
 const DEFAULT_GATEWAY_URL_BY_ADAPTER = {
   hermes: "ws://localhost:18789",
+  "hermes-agent": "http://localhost:9119",
   demo: "ws://localhost:18789",
   local: "http://localhost:7770",
   hermes3d: "http://localhost:3000/api/runtime/custom",
@@ -76,7 +78,7 @@ const HERMES_AGENT_ENDPOINT_FIX =
  * and cannot import TypeScript, so the rules are duplicated here and pinned
  * together by `tests/unit/upstreamUrlDiagnostics.test.ts`.
  */
-export const inspectUpstreamGatewayUrl = (rawUrl) => {
+export const inspectUpstreamGatewayUrl = (rawUrl, adapterType = "") => {
   const url = trimString(rawUrl);
   if (!url) return [];
 
@@ -93,7 +95,12 @@ export const inspectUpstreamGatewayUrl = (rawUrl) => {
   const port = parsed.port;
   const path = parsed.pathname.replace(/\/+$/, "");
 
-  if (port === HERMES_AGENT_DASHBOARD_PORT) {
+  // The hermes-agent adapter targets that dashboard on purpose: Studio
+  // translates JSON-RPC in-process, so the endpoint these rules warn about is
+  // exactly the right one to point at.
+  const targetsHermesAgent = trimString(adapterType).toLowerCase() === "hermes-agent";
+
+  if (!targetsHermesAgent && port === HERMES_AGENT_DASHBOARD_PORT) {
     findings.push({
       code: "hermes_agent_dashboard_port",
       severity: "error",
@@ -104,7 +111,7 @@ export const inspectUpstreamGatewayUrl = (rawUrl) => {
     });
   }
 
-  if (path === HERMES_AGENT_WS_PATH) {
+  if (!targetsHermesAgent && path === HERMES_AGENT_WS_PATH) {
     findings.push({
       code: "hermes_agent_jsonrpc_path",
       severity: "error",
@@ -210,6 +217,7 @@ export const buildGatewayWarnings = ({
   gatewayUrl,
   studioAccessToken = "",
   host = "",
+  adapterType = "",
 }) => {
   const warnings = [];
   const url = trimString(gatewayUrl);
@@ -226,7 +234,7 @@ export const buildGatewayWarnings = ({
     return warnings;
   }
 
-  for (const finding of inspectUpstreamGatewayUrl(url)) {
+  for (const finding of inspectUpstreamGatewayUrl(url, adapterType)) {
     warnings.push(`${finding.message} ${finding.fix}`);
   }
 

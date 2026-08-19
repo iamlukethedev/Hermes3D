@@ -39,6 +39,32 @@ describe("upstream gateway URL diagnostics", () => {
     expect(codesFor("ws://localhost:3000/api/gateway/ws")).toEqual([]);
   });
 
+  it("stays quiet when the hermes-agent adapter targets that endpoint on purpose", () => {
+    // The JSON-RPC path and the dashboard port are the correct destination for
+    // this adapter, so the rules that reject them elsewhere must stand down.
+    const served = "wss://luke-hermes.taildb786a.ts.net:8443/api/ws";
+    expect(codesFor(served)).toContain("hermes_agent_jsonrpc_path");
+    expect(inspectUpstreamGatewayUrl(served, "hermes-agent")).toEqual([]);
+    expect(inspectUpstreamGatewayUrlFromDoctor(served, "hermes-agent")).toEqual([]);
+
+    const local = "http://localhost:9119";
+    expect(codesFor(local)).toContain("hermes_agent_dashboard_port");
+    expect(inspectUpstreamGatewayUrl(local, "hermes-agent")).toEqual([]);
+    expect(
+      buildGatewayWarnings({ gatewayUrl: local, adapterType: "hermes-agent" }),
+    ).not.toContainEqual(expect.stringContaining("dashboard"));
+  });
+
+  it("still warns the hermes-agent adapter about a non-TLS tailnet port", () => {
+    // Suppressing the endpoint rules must not suppress this one: wss:// against
+    // a port Tailscale does not terminate TLS on fails for either adapter.
+    expect(
+      inspectUpstreamGatewayUrl("wss://luke-hermes.taildb786a.ts.net:9119", "hermes-agent").map(
+        (finding) => finding.code,
+      ),
+    ).toEqual(["tls_on_plain_tailnet_port"]);
+  });
+
   it("flags the Hermes OpenAI-compatible API port", () => {
     expect(codesFor("ws://localhost:8642")).toEqual(["hermes_openai_api_port"]);
   });

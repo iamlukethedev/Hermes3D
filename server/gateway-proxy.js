@@ -1,7 +1,17 @@
 const { Buffer } = require("node:buffer");
 const { WebSocket, WebSocketServer } = require("ws");
 
+const { createHermesAgentUpstream } = require("./hermes-agent/bridge");
+
 const DEFAULT_UPSTREAM_HANDSHAKE_TIMEOUT_MS = 10_000;
+
+/**
+ * Adapter type whose upstream is translated in-process rather than proxied.
+ *
+ * hermes-agent speaks JSON-RPC 2.0, not the Hermes3D gateway protocol, so there
+ * is nothing to forward frames to. The bridge stands in for the upstream socket.
+ */
+const EMBEDDED_ADAPTER_TYPE = "hermes-agent";
 
 /** Maximum frame payload size (256 KB). */
 const MAX_FRAME_SIZE = 256 * 1024;
@@ -189,6 +199,7 @@ function createGatewayProxy(options) {
     let upstreamReady = false;
     let upstreamUrl = "";
     let upstreamToken = "";
+    let upstreamAdapterType = "";
     let connectRequestId = null;
     let connectResponseSent = false;
     let pendingConnectFrame = null;
@@ -265,6 +276,8 @@ function createGatewayProxy(options) {
         const settings = await loadUpstreamSettings();
         upstreamUrl = typeof settings?.url === "string" ? settings.url.trim() : "";
         upstreamToken = typeof settings?.token === "string" ? settings.token.trim() : "";
+        upstreamAdapterType =
+          typeof settings?.adapterType === "string" ? settings.adapterType.trim() : "";
       } catch (err) {
         logError("Failed to load upstream gateway settings.", err);
         pendingUpstreamSetupError = {
@@ -290,21 +303,31 @@ function createGatewayProxy(options) {
         return;
       }
 
-      let upstreamOrigin = "";
-      try {
-        upstreamOrigin = resolveOriginForUpstream(upstreamUrl);
-      } catch {
-        pendingUpstreamSetupError = {
-          code: "studio.gateway_url_invalid",
-          message: "Upstream gateway URL is invalid on the Studio host.",
-        };
-        return;
-      }
+      if (upstreamAdapterType === EMBEDDED_ADAPTER_TYPE) {
+        upstreamWs = createHermesAgentUpstream({
+          url: upstreamUrl,
+          token: upstreamToken,
+          handshakeTimeoutMs: upstreamHandshakeTimeoutMs,
+          log,
+          logError,
+        });
+      } else {
+        let upstreamOrigin = "";
+        try {
+          upstreamOrigin = resolveOriginForUpstream(upstreamUrl);
+        } catch {
+          pendingUpstreamSetupError = {
+            code: "studio.gateway_url_invalid",
+            message: "Upstream gateway URL is invalid on the Studio host.",
+          };
+          return;
+        }
 
-      upstreamWs = new WebSocket(upstreamUrl, {
-        origin: upstreamOrigin,
-        handshakeTimeout: upstreamHandshakeTimeoutMs,
-      });
+        upstreamWs = new WebSocket(upstreamUrl, {
+          origin: upstreamOrigin,
+          handshakeTimeout: upstreamHandshakeTimeoutMs,
+        });
+      }
 
       upstreamHandshakeTimeoutId = setTimeout(() => {
         const timeoutError = {
@@ -385,11 +408,17 @@ function createGatewayProxy(options) {
           upstreamHandshakeTimeoutId = null;
         }
         logError("Upstream gateway WebSocket error.", err);
+
+        // The embedded bridge reports why hermes-agent refused (bad token,
+        // gated auth, disabled chat). That detail is the whole diagnosis, so
+        // surface it instead of the generic transport message.
+        const detail =
+          upstreamAdapterType === EMBEDDED_ADAPTER_TYPE && err && typeof err.message === "string"
+            ? err.message
+            : "Failed to connect to upstream gateway WebSocket.";
+
         if (!connectRequestId) {
-          pendingUpstreamSetupError ||= {
-            code: "studio.upstream_error",
-            message: "Failed to connect to upstream gateway WebSocket.",
-          };
+          pendingUpstreamSetupError ||= { code: "studio.upstream_error", message: detail };
           return;
         }
         if (
@@ -399,10 +428,7 @@ function createGatewayProxy(options) {
           sendConnectError(pendingUpstreamSetupError.code, pendingUpstreamSetupError.message);
           return;
         }
-        sendConnectError(
-          "studio.upstream_error",
-          "Failed to connect to upstream gateway WebSocket."
-        );
+        sendConnectError("studio.upstream_error", detail);
       });
 
       log("proxy connected");

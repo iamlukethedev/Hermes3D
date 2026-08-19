@@ -123,7 +123,7 @@ const INITIAL_CONNECT_RETRY_DELAY_MS = 1_200;
 const CONTROL_UI_CLIENT_ID = "hermes3d-control-ui";
 
 const isAutoManagedAdapter = (adapterType: StudioGatewayAdapterType) =>
-  adapterType === "hermes" || adapterType === "demo";
+  adapterType === "hermes" || adapterType === "hermes-agent" || adapterType === "demo";
 
 export const resolveGatewayClientName = () => CONTROL_UI_CLIENT_ID;
 

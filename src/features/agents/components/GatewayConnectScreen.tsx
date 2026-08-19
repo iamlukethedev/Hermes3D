@@ -53,7 +53,10 @@ export const GatewayConnectScreen = ({
     selectedAdapterType === "hermes3d" ||
     selectedAdapterType === "custom";
   const isLocal = useMemo(() => isLocalGatewayUrl(gatewayUrl), [gatewayUrl]);
-  const urlFindings = useMemo(() => inspectUpstreamGatewayUrl(gatewayUrl), [gatewayUrl]);
+  const urlFindings = useMemo(
+    () => inspectUpstreamGatewayUrl(gatewayUrl, selectedAdapterType),
+    [gatewayUrl, selectedAdapterType]
+  );
   const localPort = useMemo(() => resolveLocalGatewayPort(gatewayUrl), [gatewayUrl]);
   const localGatewayCommand = useMemo(
     () => `HERMES_ADAPTER_PORT=${localPort} npm run hermes-adapter`,
@@ -72,6 +75,9 @@ export const GatewayConnectScreen = ({
   };
   const useHermesPreset = () => {
     onAdapterTypeChange("hermes");
+  };
+  const useHermesAgentPreset = () => {
+    onAdapterTypeChange("hermes-agent");
   };
   const useCustomPreset = () => {
     onAdapterTypeChange("custom");
@@ -98,6 +104,8 @@ export const GatewayConnectScreen = ({
     switch (selectedAdapterType) {
       case "hermes":
         return "Hermes is the agent runtime path with its own provider/account flow behind the gateway.";
+      case "hermes-agent":
+        return "Hermes Agent connects straight to a hermes-agent backend's JSON-RPC gateway — no adapter process. Point it at the server root (Studio appends /api/ws) and use the session token, not a dashboard login.";
       case "demo":
         return "Demo can fall back to a seeded main agent locally, or connect to the bundled mock gateway for streaming replies.";
       case "local":
@@ -286,6 +294,13 @@ export const GatewayConnectScreen = ({
               onClick={useHermesPreset}
             >
               Hermes backend
+            </button>
+            <button
+              type="button"
+              className="ui-btn-secondary px-3 py-1.5 text-[11px] font-semibold tracking-[0.05em]"
+              onClick={useHermesAgentPreset}
+            >
+              Hermes Agent (direct)
             </button>
             <button
               type="button"

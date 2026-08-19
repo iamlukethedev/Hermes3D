@@ -33,12 +33,14 @@ export type StudioGatewaySettings = {
 
 export type StudioGatewayAdapterType =
   | "hermes"
+  | "hermes-agent"
   | "demo"
   | "local"
   | "hermes3d"
   | "custom";
 export const STUDIO_GATEWAY_ADAPTER_TYPES = [
   "hermes",
+  "hermes-agent",
   "demo",
   "local",
   "hermes3d",
@@ -280,6 +282,8 @@ export type StudioSettingsPatch = {
 
 const SETTINGS_VERSION = 1 as const;
 const DEFAULT_LOCAL_ADAPTER_GATEWAY_URL = "ws://localhost:18789";
+/** A hermes-agent backend started with `hermes serve` on its default port. */
+const DEFAULT_HERMES_AGENT_URL = "http://localhost:9119";
 const DEFAULT_LOCAL_RUNTIME_URL = "http://localhost:7770";
 const DEFAULT_HERMES3D_RUNTIME_URL = "http://localhost:3000/api/runtime/custom";
 const DEFAULT_CUSTOM_RUNTIME_URL = "http://localhost:7770";
@@ -947,6 +951,7 @@ const normalizeGatewayAdapterType = (
   if (
     adapterType === "demo" ||
     adapterType === "hermes" ||
+    adapterType === "hermes-agent" ||
     adapterType === "local" ||
     adapterType === "hermes3d" ||
     adapterType === "custom"
@@ -976,6 +981,8 @@ export const resolveDefaultStudioGatewayProfile = (
   }
 
   switch (adapterType) {
+    case "hermes-agent":
+      return { url: DEFAULT_HERMES_AGENT_URL, token: "" };
     case "hermes3d":
       return { url: DEFAULT_HERMES3D_RUNTIME_URL, token: "" };
     case "local":

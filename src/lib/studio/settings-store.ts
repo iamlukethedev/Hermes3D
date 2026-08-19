@@ -73,6 +73,7 @@ const normalizeAdapterType = (value: string | undefined): StudioGatewayAdapterTy
   const normalized = value?.trim().toLowerCase();
   if (
     normalized === "hermes" ||
+    normalized === "hermes-agent" ||
     normalized === "demo" ||
     normalized === "local" ||
     normalized === "hermes3d" ||

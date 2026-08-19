@@ -378,6 +378,7 @@ async function main() {
     gatewayUrl: runtimeContext.gatewayUrl,
     studioAccessToken: trim(env.STUDIO_ACCESS_TOKEN),
     host: trim(env.HOST),
+    adapterType: runtimeContext.adapterType,
   })) {
     checks.push(checkWarn("Gateway access", "Gateway hints", warning));
   }
