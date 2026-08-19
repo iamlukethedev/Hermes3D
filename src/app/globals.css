@@ -1161,6 +1161,12 @@ textarea:focus::-webkit-scrollbar {
   color: var(--danger-soft-fg);
 }
 
+.ui-alert-caution {
+  border: 1px solid var(--status-approval-border);
+  background: var(--status-approval-bg);
+  color: var(--status-approval-fg);
+}
+
 .ui-text-danger {
   color: var(--danger-soft-fg);
 }

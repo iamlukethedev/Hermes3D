@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { Check, Copy, Eye, EyeOff } from "lucide-react";
 import type { GatewayStatus } from "@/lib/gateway/GatewayClient";
 import { isLocalGatewayUrl } from "@/lib/gateway/local-gateway";
+import { inspectUpstreamGatewayUrl } from "@/lib/gateway/upstreamUrlDiagnostics";
 import type { StudioGatewayAdapterType, StudioGatewaySettings } from "@/lib/studio/settings";
 import { RunningAvatarLoader } from "@/features/agents/components/RunningAvatarLoader";
 
@@ -52,6 +53,7 @@ export const GatewayConnectScreen = ({
     selectedAdapterType === "hermes3d" ||
     selectedAdapterType === "custom";
   const isLocal = useMemo(() => isLocalGatewayUrl(gatewayUrl), [gatewayUrl]);
+  const urlFindings = useMemo(() => inspectUpstreamGatewayUrl(gatewayUrl), [gatewayUrl]);
   const localPort = useMemo(() => resolveLocalGatewayPort(gatewayUrl), [gatewayUrl]);
   const localGatewayCommand = useMemo(
     () => `HERMES_ADAPTER_PORT=${localPort} npm run hermes-adapter`,
@@ -168,6 +170,23 @@ export const GatewayConnectScreen = ({
           spellCheck={false}
         />
       </label>
+
+      {urlFindings.length > 0 ? (
+        <ul className="flex flex-col gap-2" aria-label="Gateway URL warnings">
+          {urlFindings.map((finding) => (
+            <li
+              key={finding.code}
+              data-testid={`gateway-url-finding-${finding.code}`}
+              className={`rounded-md px-3 py-2 text-xs leading-snug ${
+                finding.severity === "error" ? "ui-alert-danger" : "ui-alert-caution"
+              }`}
+            >
+              <p className="font-medium">{finding.message}</p>
+              <p className="mt-1 opacity-80">{finding.fix}</p>
+            </li>
+          ))}
+        </ul>
+      ) : null}
 
       <div className="space-y-0.5 text-xs text-muted-foreground">
         <p className="font-medium text-foreground">Using Tailscale?</p>
