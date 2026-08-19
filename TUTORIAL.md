@@ -8,6 +8,12 @@ This guide is a step-by-step runbook for the most common production-like setup:
 
 If you follow this exactly, people should avoid the most common confusion: **Hermes3D does not install or run your agent backend for you.**
 
+> **Running `hermes-agent` as your backend?** There is a shorter path. Studio can
+> speak that backend's JSON-RPC gateway directly, so no adapter runs on either
+> machine and Machine A only needs `hermes serve` plus Tailscale Serve. Follow
+> [`docs/hermes-agent-tailscale.md`](docs/hermes-agent-tailscale.md) instead of
+> this guide. Everything below applies to the Hermes HTTP API + adapter path.
+
 ---
 
 ## 0) Architecture and Responsibilities

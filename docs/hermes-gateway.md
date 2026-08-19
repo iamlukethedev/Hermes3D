@@ -1,11 +1,15 @@
 # Hermes Gateway Adapter
 
-Hermes3D runs against Hermes by using the bundled adapter in
+> **Connecting to a `hermes-agent` backend?** Use the direct path instead — it
+> speaks that backend's JSON-RPC gateway from inside the Studio server, so no
+> adapter process runs anywhere. See
+> [`hermes-agent-tailscale.md`](hermes-agent-tailscale.md). This page covers the
+> older adapter path, which is still what the Hermes HTTP API integration uses.
+
+Hermes3D runs against the Hermes HTTP API by using the bundled adapter in
 [`server/hermes-gateway-adapter.js`](../server/hermes-gateway-adapter.js).
 
-This is the default backend path in this repository.
-It is not yet a fully native Studio-side Hermes provider. Instead, it
-uses the runtime seam in Studio while Hermes is exposed through a
+It uses the runtime seam in Studio while Hermes is exposed through a
 Hermes3D-compatible WebSocket adapter.
 
 ## Architecture
@@ -82,9 +86,15 @@ adapter needs to be published. Keep it on loopback and expose it with Tailscale
 Serve, then connect to `wss://<tailnet-host>` with no port. Full walkthrough in
 [`TUTORIAL.md`](../TUTORIAL.md).
 
-Do not point the gateway URL at port `9119`. That is the hermes-agent
-dashboard's JSON-RPC endpoint, not a Hermes3D gateway, and the two protocols are
-not compatible. See the troubleshooting section of the tutorial.
+With this adapter, do not point the gateway URL at port `9119`. That is the
+hermes-agent dashboard's JSON-RPC endpoint, not a Hermes3D gateway, and the two
+protocols are not compatible. See the troubleshooting section of the tutorial.
+
+To talk to that JSON-RPC endpoint on purpose, switch the backend to
+**Hermes Agent (direct)** and follow
+[`hermes-agent-tailscale.md`](hermes-agent-tailscale.md). Note that a dashboard
+bound to a public address is gated and rejects token auth, so that guide binds
+the backend to loopback and tunnels it.
 
 ### 5. Optional all-in-one local startup
 
