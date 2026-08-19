@@ -115,6 +115,16 @@ export function buildNavGrid(furniture: FurnitureItem[]): NavGrid {
   return grid;
 }
 
+/** True when the nav cell containing (x, y) is inside the grid and unblocked. */
+export const isNavPointFree = (grid: NavGrid, x: number, y: number): boolean => {
+  const column = Math.floor(x / GRID_CELL);
+  const row = Math.floor(y / GRID_CELL);
+  if (column < 0 || column >= GRID_COLS || row < 0 || row >= GRID_ROWS) {
+    return false;
+  }
+  return grid[row * GRID_COLS + column] === 0;
+};
+
 export function astar(
   sx: number,
   sy: number,

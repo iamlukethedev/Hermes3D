@@ -42,5 +42,9 @@ export const WORLD_W = CANVAS_W * SCALE;
 export const WORLD_H = CANVAS_H * SCALE;
 export const PING_PONG_SESSION_MS = 60_000;
 export const PING_PONG_APPROACH_SPEED = WALK_SPEED * 1.8;
+// Conversations are timeboxed by the speech window, so distant participants
+// hurry over; at plain WALK_SPEED an agent crossing the office would arrive
+// after the chat already ended.
+export const CONVERSATION_APPROACH_SPEED = WALK_SPEED * 2.2;
 export const PING_PONG_BALL_RADIUS = 0.055;
 export const PING_PONG_TABLE_SURFACE_Y = 0.465;

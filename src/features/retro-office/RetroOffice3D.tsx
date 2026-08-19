@@ -64,6 +64,7 @@ import {
   BUMP_RECOVERY_MS,
   CANVAS_H,
   CANVAS_W,
+  CONVERSATION_APPROACH_SPEED,
   DESK_STICKY_MS,
   DOOR_LENGTH,
   DOOR_THICKNESS,
@@ -126,6 +127,7 @@ import {
   getMeetingSeatLocations,
   getQaLabStations,
   GYM_DEFAULT_TARGET,
+  isNavPointFree,
   MEETING_OVERFLOW_LOCATIONS,
   QA_LAB_DEFAULT_TARGET,
   resolveDeskIndexForItem,
@@ -138,6 +140,19 @@ import {
   ROAM_POINTS,
   SERVER_ROOM_TARGET,
 } from "@/features/retro-office/core/navigation";
+import {
+  computeConversationSlots,
+  CONVERSATION_EN_ROUTE_GRACE_MS,
+  CONVERSATION_MAX_LIFETIME_MS,
+  CONVERSATION_MIN_LIFETIME_MS,
+  CONVERSATION_TALK_PULSE_MS,
+  CONVERSATION_WINDOW_MS,
+  conversationTalkTurn,
+  deriveConversationGroups,
+  type ConversationGroup,
+  type ConversationSpeechSample,
+} from "@/features/retro-office/core/conversations";
+import { ConversationChatterAudio } from "@/features/retro-office/systems/conversationChatterAudio";
 import {
   loadFurniture,
   markAtmMigrationApplied,
@@ -241,7 +256,10 @@ import {
 import type { OfficeCleaningCue } from "@/lib/office/janitorReset";
 
 type OfficeDeskMonitorMap = Record<string, OfficeDeskMonitor>;
-type RenderAgentUiSnapshot = Pick<RenderAgent, "state" | "status">;
+type RenderAgentUiSnapshot = Pick<
+  RenderAgent,
+  "state" | "status" | "conversationGroupId"
+>;
 type FeedEvent = {
   id: string;
   name: string;
@@ -884,6 +902,8 @@ function useAgentTick(
   qaHoldByAgentId: Record<string, boolean> = {},
   githubReviewByAgentId: Record<string, boolean> = {},
   standupMeeting: StandupMeeting | null = null,
+  conversationGroups: ConversationGroup[] = [],
+  conversationExpiryRef: React.RefObject<Map<string, number>> | null = null,
 ) {
   const renderAgentsRef = useRef<RenderAgent[]>([]);
   const renderAgentLookupRef = useRef<Map<string, RenderAgent>>(new Map());
@@ -940,6 +960,27 @@ function useAgentTick(
       new Set(standupActive ? (standupMeeting?.participantOrder ?? []) : []),
     [standupActive, standupMeeting?.participantOrder],
   );
+
+  // Conversation huddles: each group gets its circle laid out once (keyed by
+  // the group id, which encodes membership) so slots stay stable while agents
+  // walk to them. Liveness comes from conversationActivityRef, not the
+  // slot map, so an ongoing chat keeps its circle without re-rendering.
+  const conversationMembershipByAgentId = useMemo(() => {
+    const map = new Map<string, { groupId: string; size: number }>();
+    for (const group of conversationGroups) {
+      for (const agentId of group.participantIds) {
+        map.set(agentId, {
+          groupId: group.id,
+          size: group.participantIds.length,
+        });
+      }
+    }
+    return map;
+  }, [conversationGroups]);
+  const conversationSlotByAgentIdRef = useRef<
+    Map<string, { x: number; y: number; facing: number; seatIndex: number; groupId: string }>
+  >(new Map());
+  const placedConversationGroupIdsRef = useRef<Set<string>>(new Set());
   const resolveMeetingTarget = useCallback(
     (agentId: string) => {
       const participantOrder = standupMeeting?.participantOrder ?? [];
@@ -964,6 +1005,49 @@ function useAgentTick(
       if (!activeIds.has(id)) stickyUntilRef.current.delete(id);
 
     const currentMap = new Map(renderAgentsRef.current.map((a) => [a.id, a]));
+
+    // Lay out circles for conversation groups that don't have one yet, and
+    // drop placements for groups that ended or changed membership.
+    {
+      const liveGroupIds = new Set(conversationGroups.map((group) => group.id));
+      for (const groupId of placedConversationGroupIdsRef.current) {
+        if (!liveGroupIds.has(groupId)) {
+          placedConversationGroupIdsRef.current.delete(groupId);
+        }
+      }
+      for (const [agentId, slot] of conversationSlotByAgentIdRef.current) {
+        if (!liveGroupIds.has(slot.groupId)) {
+          conversationSlotByAgentIdRef.current.delete(agentId);
+        }
+      }
+      for (const group of conversationGroups) {
+        if (placedConversationGroupIdsRef.current.has(group.id)) continue;
+        const participants = group.participantIds
+          .map((agentId) => {
+            const current = currentMap.get(agentId);
+            return current
+              ? { id: agentId, x: current.x, y: current.y }
+              : null;
+          })
+          .filter((entry): entry is { id: string; x: number; y: number } =>
+            Boolean(entry),
+          );
+        if (participants.length < 2) continue;
+        const grid = getNavGrid();
+        const slots = computeConversationSlots({
+          participants,
+          isFree: (x, y) => isNavPointFree(grid, x, y),
+        });
+        for (const [agentId, slot] of slots) {
+          conversationSlotByAgentIdRef.current.set(agentId, {
+            ...slot,
+            groupId: group.id,
+          });
+        }
+        placedConversationGroupIdsRef.current.add(group.id);
+      }
+    }
+
     const next: RenderAgent[] = [];
 
     agents.forEach((agent, idx) => {
@@ -1108,9 +1192,31 @@ function useAgentTick(
             ? "working"
             : "idle";
 
+      const conversationMembership = conversationMembershipByAgentId.get(
+        agent.id,
+      );
+      const conversationSlot = conversationMembership
+        ? conversationSlotByAgentIdRef.current.get(agent.id)
+        : undefined;
+
       let ns: Partial<RenderAgent> = {};
       if (existing) {
         ns = { ...existing };
+        if (!conversationMembership && existing.conversationGroupId) {
+          ns.conversationGroupId = undefined;
+          ns.conversationTargetX = undefined;
+          ns.conversationTargetY = undefined;
+          ns.conversationFacing = undefined;
+          ns.conversationSeatIndex = undefined;
+          ns.conversationSize = undefined;
+          ns.conversationReplanAtMs = undefined;
+          ns.walkSpeed =
+            existing.conversationPreviousWalkSpeed ?? existing.walkSpeed;
+          ns.conversationPreviousWalkSpeed = undefined;
+          if (existing.interactionTarget === "conversation") {
+            ns.interactionTarget = undefined;
+          }
+        }
         if (explicitMeetingHold && meetingTarget) {
           ns.pingPongUntil = undefined;
           ns.pingPongTargetX = undefined;
@@ -1151,6 +1257,63 @@ function useAgentTick(
               ? "sitting"
               : "walking";
           ns.facing = meetingTarget.facing;
+        } else if (conversationMembership && conversationSlot) {
+          // Agents talking between themselves gather into a circle. Standup
+          // outranks a huddle; a huddle outranks room holds and desk work.
+          ns.pingPongUntil = undefined;
+          ns.pingPongTargetX = undefined;
+          ns.pingPongTargetY = undefined;
+          ns.pingPongFacing = undefined;
+          ns.pingPongPartnerId = undefined;
+          ns.pingPongTableUid = undefined;
+          ns.pingPongSide = undefined;
+          ns.walkSpeed =
+            existing.pingPongPreviousWalkSpeed ?? existing.walkSpeed;
+          ns.pingPongPreviousWalkSpeed = undefined;
+          ns.interactionTarget = "conversation";
+          ns.conversationGroupId = conversationSlot.groupId;
+          ns.conversationTargetX = conversationSlot.x;
+          ns.conversationTargetY = conversationSlot.y;
+          ns.conversationFacing = conversationSlot.facing;
+          ns.conversationSeatIndex = conversationSlot.seatIndex;
+          ns.conversationSize = conversationMembership.size;
+          ns.conversationPreviousWalkSpeed =
+            existing.conversationPreviousWalkSpeed ?? existing.walkSpeed;
+          ns.walkSpeed = Math.max(
+            ns.walkSpeed ?? WALK_SPEED,
+            CONVERSATION_APPROACH_SPEED,
+          );
+          ns.phoneBoothStage = undefined;
+          ns.serverRoomStage = undefined;
+          ns.gymStage = undefined;
+          ns.qaLabStage = undefined;
+          ns.qaLabStationType = undefined;
+          ns.workoutStyle = undefined;
+          const targetChanged =
+            existing.targetX !== conversationSlot.x ||
+            existing.targetY !== conversationSlot.y ||
+            existing.conversationGroupId !== conversationSlot.groupId;
+          ns.targetX = conversationSlot.x;
+          ns.targetY = conversationSlot.y;
+          const arrivedAtCircle =
+            Math.hypot(
+              existing.x - conversationSlot.x,
+              existing.y - conversationSlot.y,
+            ) < 15;
+          if (targetChanged) {
+            ns.path = planPath(
+              existing.x,
+              existing.y,
+              conversationSlot.x,
+              conversationSlot.y,
+            );
+            ns.state = arrivedAtCircle ? "standing" : "walking";
+          } else if (arrivedAtCircle) {
+            ns.state = "standing";
+          }
+          // Not arrived and target unchanged: the tick owns movement; forcing
+          // "walking" here would flap agents whose slot is briefly unreachable.
+          if (arrivedAtCircle) ns.facing = conversationSlot.facing;
         } else if (explicitGymHold) {
           const gymRoute = resolveGymRoute(
             existing.x,
@@ -1741,9 +1904,12 @@ function useAgentTick(
   }, [
     agents,
     assignedDeskIndexByAgentId,
+    conversationGroups,
+    conversationMembershipByAgentId,
     deskHoldByAgentId,
     deskLocations,
     furnitureRef,
+    getNavGrid,
     gymHoldByAgentId,
     gymWorkoutLocations,
     smsBoothHoldByAgentId,
@@ -1854,6 +2020,77 @@ function useAgentTick(
           frame: agent.frame + 1,
         };
       }
+      // Conversation huddle upkeep. Liveness comes from the expiry ref so an
+      // ongoing chat keeps the circle without any React re-render.
+      const conversationLive =
+        agent.conversationGroupId !== undefined &&
+        (conversationExpiryRef?.current?.get(agent.conversationGroupId) ?? 0) >
+          now;
+      if (agent.conversationGroupId !== undefined && !conversationLive) {
+        return {
+          ...agent,
+          conversationGroupId: undefined,
+          conversationTargetX: undefined,
+          conversationTargetY: undefined,
+          conversationFacing: undefined,
+          conversationSeatIndex: undefined,
+          conversationSize: undefined,
+          conversationReplanAtMs: undefined,
+          walkSpeed: agent.conversationPreviousWalkSpeed ?? agent.walkSpeed,
+          conversationPreviousWalkSpeed: undefined,
+          interactionTarget:
+            agent.interactionTarget === "conversation"
+              ? undefined
+              : agent.interactionTarget,
+          bumpTalkUntil: undefined,
+          targetX: agent.x,
+          targetY: agent.y,
+          path: [],
+          state: "standing" as const,
+          frame: agent.frame + 1,
+        };
+      }
+      // A huddle must not dissolve while its members are still walking over —
+      // on slow machines the walk can outlast the speech window. Extend the
+      // group's life in small slices; the refresh loop enforces the hard cap.
+      if (
+        conversationLive &&
+        agent.conversationGroupId !== undefined &&
+        agent.state === "walking"
+      ) {
+        const expiryMap = conversationExpiryRef?.current;
+        const current = expiryMap?.get(agent.conversationGroupId) ?? 0;
+        if (expiryMap && current < now + CONVERSATION_EN_ROUTE_GRACE_MS) {
+          expiryMap.set(
+            agent.conversationGroupId,
+            now + CONVERSATION_EN_ROUTE_GRACE_MS,
+          );
+        }
+      }
+      // Collision escapes and idle wander can overwrite the walk target;
+      // steer the agent back to its circle slot.
+      if (
+        conversationLive &&
+        agent.conversationTargetX !== undefined &&
+        agent.conversationTargetY !== undefined &&
+        (agent.targetX !== agent.conversationTargetX ||
+          agent.targetY !== agent.conversationTargetY)
+      ) {
+        return {
+          ...agent,
+          targetX: agent.conversationTargetX,
+          targetY: agent.conversationTargetY,
+          path: astar(
+            agent.x,
+            agent.y,
+            agent.conversationTargetX,
+            agent.conversationTargetY,
+            grid,
+          ),
+          state: "walking" as const,
+          frame: agent.frame + 1,
+        };
+      }
       const baseSpeed = agent.walkSpeed ?? WALK_SPEED;
       const speed =
         agent.status === "working" && agent.state !== "sitting"
@@ -1873,6 +2110,7 @@ function useAgentTick(
         ny = agent.y,
         nf = agent.facing,
         npath = path;
+      let conversationTalkPulse = false;
 
       if (dist > speed) {
         nx = agent.x + (dx / dist) * speed;
@@ -1913,6 +2151,48 @@ function useAgentTick(
             ny = agent.pingPongTargetY ?? ny;
             nf = agent.pingPongFacing ?? nf;
             ns = "standing";
+          } else if (conversationLive && agent.conversationTargetX !== undefined) {
+            const slotY = agent.conversationTargetY ?? ny;
+            const distToSlot = Math.hypot(
+              agent.conversationTargetX - nx,
+              slotY - ny,
+            );
+            if (distToSlot > 15 && (agent.conversationReplanAtMs ?? 0) <= now) {
+              // Path exhausted away from the slot (blocked route, earlier
+              // detour): retry occasionally instead of standing stranded.
+              // When A* finds no route (nav-grid pocket), beeline — a brief
+              // clip beats a participant who never joins the huddle.
+              const planned = astar(
+                nx,
+                ny,
+                agent.conversationTargetX,
+                slotY,
+                grid,
+              );
+              return {
+                ...agent,
+                x: nx,
+                y: ny,
+                conversationReplanAtMs: now + 1_500,
+                targetX: agent.conversationTargetX,
+                targetY: slotY,
+                path:
+                  planned.length > 0
+                    ? planned
+                    : [{ x: agent.conversationTargetX, y: slotY }],
+                state: "walking" as const,
+                frame: agent.frame + 1,
+              };
+            }
+            // Standing in the huddle: face the centre and take talking turns
+            // so the chatter bubble hops around the circle.
+            nf = agent.conversationFacing ?? nf;
+            ns = "standing";
+            conversationTalkPulse = conversationTalkTurn(
+              now,
+              agent.conversationSeatIndex ?? 0,
+              agent.conversationSize ?? 2,
+            );
           } else if (agent.status === "working") {
             if (
               agent.interactionTarget === "sms_booth" &&
@@ -2181,6 +2461,9 @@ function useAgentTick(
         facing: nf,
         state: ns,
         path: npath,
+        ...(conversationTalkPulse
+          ? { bumpTalkUntil: now + CONVERSATION_TALK_PULSE_MS }
+          : {}),
         frame: agent.frame + 1,
       };
     });
@@ -2618,6 +2901,151 @@ export function RetroOffice3D({
   const suppressSceneSpeechBubbles =
     standupMeeting?.phase === "gathering" ||
     standupMeeting?.phase === "in_progress";
+
+  // --- Agent-to-agent conversation huddles -------------------------------
+  // Speech samples (completed replies + live streaming) feed the grouping;
+  // when two or more agents talk in the same window they gather in a circle.
+  const conversationSamplesRef = useRef<Map<string, ConversationSpeechSample>>(
+    new Map(),
+  );
+  const conversationExpiryRef = useRef<Map<string, number>>(new Map());
+  const conversationKnownGroupsRef = useRef<
+    Map<string, { group: ConversationGroup; formedAtMs: number }>
+  >(new Map());
+  const conversationSignatureRef = useRef("");
+  const [conversationGroups, setConversationGroups] = useState<
+    ConversationGroup[]
+  >([]);
+  const conversationAgentNamesById = useMemo(() => {
+    const names: Record<string, string> = {};
+    for (const agent of agents) names[agent.id] = agent.name;
+    return names;
+  }, [agents]);
+
+  useEffect(() => {
+    const latest = feedEvents[0];
+    if (!latest || latest.kind !== "reply") return;
+    const text = latest.text.trim();
+    if (!text) return;
+    conversationSamplesRef.current.set(latest.id, {
+      agentId: latest.id,
+      text,
+      atMs: Date.now(),
+    });
+  }, [feedEvents]);
+
+  useEffect(() => {
+    const now = Date.now();
+    for (const [agentId, text] of Object.entries(
+      streamingTextByAgentId ?? {},
+    )) {
+      if (typeof text === "string" && text.trim()) {
+        conversationSamplesRef.current.set(agentId, {
+          agentId,
+          text: text.trim(),
+          atMs: now,
+        });
+      }
+    }
+  }, [streamingTextByAgentId]);
+
+  useEffect(() => {
+    const refresh = () => {
+      const now = Date.now();
+      const derived = deriveConversationGroups({
+        samples: [...conversationSamplesRef.current.values()],
+        agentNamesById: conversationAgentNamesById,
+        nowMs: now,
+        suppressed: suppressSceneSpeechBubbles,
+      });
+      const known = conversationKnownGroupsRef.current;
+      if (suppressSceneSpeechBubbles) known.clear();
+      for (const group of derived) {
+        const entry = known.get(group.id);
+        if (entry) {
+          entry.group = group;
+          continue;
+        }
+        // A grown conversation supersedes the smaller huddle it absorbed.
+        for (const [otherId, other] of known) {
+          if (
+            otherId !== group.id &&
+            other.group.participantIds.every((id) =>
+              group.participantIds.includes(id),
+            )
+          ) {
+            known.delete(otherId);
+          }
+        }
+        known.set(group.id, { group, formedAtMs: now });
+      }
+      // A huddle lives until its speech window lapses, but never less than the
+      // minimum lifetime — otherwise a one-shot mention dissolves the circle
+      // while distant participants are still walking over. The movement tick
+      // extends the expiry while members are en route (merge with max), and a
+      // hard ceiling keeps an unreachable slot from pinning a huddle forever.
+      const expiry = conversationExpiryRef.current;
+      const groups: ConversationGroup[] = [];
+      for (const [groupId, entry] of known) {
+        const hardCapAt = entry.formedAtMs + CONVERSATION_MAX_LIFETIME_MS;
+        const keepAliveUntil = Math.min(
+          Math.max(
+            entry.group.lastActivityMs + CONVERSATION_WINDOW_MS,
+            entry.formedAtMs + CONVERSATION_MIN_LIFETIME_MS,
+            expiry.get(groupId) ?? 0,
+          ),
+          hardCapAt,
+        );
+        if (keepAliveUntil <= now) {
+          known.delete(groupId);
+          expiry.delete(groupId);
+          continue;
+        }
+        groups.push(entry.group);
+        expiry.set(groupId, keepAliveUntil);
+      }
+      for (const groupId of expiry.keys()) {
+        if (!known.has(groupId)) expiry.delete(groupId);
+      }
+      groups.sort((a, b) => a.id.localeCompare(b.id));
+      // Only re-render (and re-run the movement effect) when membership
+      // changes; liveness flows through the expiry ref every second.
+      const signature = groups.map((group) => group.id).join("|");
+      if (signature !== conversationSignatureRef.current) {
+        conversationSignatureRef.current = signature;
+        setConversationGroups(groups);
+      }
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 1_000);
+    return () => window.clearInterval(timer);
+  }, [
+    conversationAgentNamesById,
+    feedEvents,
+    streamingTextByAgentId,
+    suppressSceneSpeechBubbles,
+  ]);
+
+  // Soft murmur while any huddle is active; browsers require a user gesture
+  // before audio can start, so unlock on the first pointer interaction.
+  const chatterAudioRef = useRef<ConversationChatterAudio | null>(null);
+  useEffect(() => {
+    if (!chatterAudioRef.current) {
+      chatterAudioRef.current = new ConversationChatterAudio();
+    }
+    chatterAudioRef.current.setActiveConversationCount(
+      conversationGroups.length,
+    );
+  }, [conversationGroups]);
+  useEffect(() => {
+    const unlock = () => chatterAudioRef.current?.unlock();
+    window.addEventListener("pointerdown", unlock);
+    return () => {
+      window.removeEventListener("pointerdown", unlock);
+      chatterAudioRef.current?.dispose();
+      chatterAudioRef.current = null;
+    };
+  }, []);
   // New Idea 2: camera preset target ref (shared into Canvas).
   const cameraPresetRef = useRef<{
     pos: [number, number, number];
@@ -2897,6 +3325,8 @@ export function RetroOffice3D({
     resolvedQaHoldByAgentId,
     resolvedGithubReviewByAgentId,
     standupMeeting,
+    conversationGroups,
+    conversationExpiryRef,
   );
   useEffect(() => {
     const syncRenderAgentUi = () => {
@@ -2905,6 +3335,7 @@ export function RetroOffice3D({
         next[agent.id] = {
           state: agent.state,
           status: agent.status,
+          conversationGroupId: agent.conversationGroupId,
         };
       }
       // Keep the previous object when nothing changed so idle frames do not
@@ -2916,7 +3347,12 @@ export function RetroOffice3D({
           for (const id of previousIds) {
             const before = previous[id];
             const after = next[id];
-            if (!after || before.state !== after.state || before.status !== after.status) {
+            if (
+              !after ||
+              before.state !== after.state ||
+              before.status !== after.status ||
+              before.conversationGroupId !== after.conversationGroupId
+            ) {
               identical = false;
               break;
             }
@@ -5200,6 +5636,33 @@ export function RetroOffice3D({
     return () => clearTimeout(timer);
   }, [spotlightAgentId]);
 
+  // Flag huddle participants with a chat mood chip when a conversation forms.
+  useEffect(() => {
+    if (conversationGroups.length === 0) return;
+    const now = Date.now();
+    setMoodByAgentId((prev) => {
+      const next = { ...prev };
+      for (const group of conversationGroups) {
+        for (const agentId of group.participantIds) {
+          next[agentId] = { emoji: "💬", ts: now };
+        }
+      }
+      return next;
+    });
+    const timer = window.setTimeout(() => {
+      setMoodByAgentId((prev) => {
+        const next = { ...prev };
+        for (const group of conversationGroups) {
+          for (const agentId of group.participantIds) {
+            if (next[agentId]?.emoji === "💬") delete next[agentId];
+          }
+        }
+        return next;
+      });
+    }, 4_000);
+    return () => window.clearTimeout(timer);
+  }, [conversationGroups]);
+
   const lastOfficeCenterSignalRef = useRef(officeCenterSignal);
 
   useEffect(() => {
@@ -5970,7 +6433,20 @@ export function RetroOffice3D({
 
       {/* Agent roster — compact top summary with overflow panel. */}
       {!readOnly && !immersiveOverlayActive ? (
-        <div className="absolute top-10 left-1/2 z-20 -translate-x-1/2">
+        <div
+          className="absolute top-10 left-1/2 z-20 -translate-x-1/2"
+          data-conversation-groups={conversationGroups
+            .map((group) => group.id)
+            .join("|")}
+          data-conversation-standing={Object.entries(renderAgentUiById)
+            .filter(
+              ([, snapshot]) =>
+                snapshot.conversationGroupId && snapshot.state === "standing",
+            )
+            .map(([agentId]) => agentId)
+            .sort()
+            .join("|")}
+        >
           <div className="flex items-center gap-2 rounded-full border border-amber-900/25 bg-[#1c1610]/92 px-2 py-2 shadow-lg backdrop-blur-sm">
             <div className="flex items-center -space-x-1.5">
               {compactRosterAgents.map((agent) => {

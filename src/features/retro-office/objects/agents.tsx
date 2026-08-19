@@ -15,6 +15,7 @@ import type {
 import { AgentModelProps } from "@/features/retro-office/objects/types";
 
 const MAX_NAMEPLATE_TEXT_LENGTH = 10;
+const MAX_SUBTITLE_TEXT_LENGTH = 20;
 const MAX_SPEECH_BUBBLE_TEXT_LENGTH = 180;
 const MAX_SPEECH_BUBBLE_LINES = 4;
 
@@ -24,6 +25,30 @@ const formatAgentNameplateText = (value: string): string => {
   if (normalized.length <= MAX_NAMEPLATE_TEXT_LENGTH) return normalized;
   const [firstName] = normalized.split(" ");
   return firstName || normalized;
+};
+
+/**
+ * Compress a role description to one short nameplate line.
+ *
+ * Agent roles arrive as full sentences ("technical planner and business
+ * systems analyst for Smartways. Converts Jira tickets into…"); rendered raw
+ * they wrap into a wall of text above every agent. Keep the first clause,
+ * clamped at a word boundary, so the plate stays a single line.
+ */
+export const formatAgentSubtitleText = (value: string): string => {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (!normalized) return "";
+  const clause =
+    normalized.split(/(?:\.\s+|\s+[—–]\s+)/)[0]?.replace(/[.;\s]+$/, "") ||
+    normalized;
+  if (clause.length <= MAX_SUBTITLE_TEXT_LENGTH) return clause;
+  const cut = clause.slice(0, MAX_SUBTITLE_TEXT_LENGTH);
+  const lastSpace = cut.lastIndexOf(" ");
+  const head = (lastSpace > 8 ? cut.slice(0, lastSpace) : cut).replace(
+    /[\s,;:]+$/,
+    "",
+  );
+  return `${head}…`;
 };
 
 const flattenSpeechBubbleMarkdown = (value: string) =>
@@ -674,7 +699,8 @@ export const AgentModel = memo(function AgentModel({
     : "transparent";
   const speechBubbleBorderInset = activeSpeechBubble ? 0.03 : 0;
   const nameplateText = name ? formatAgentNameplateText(name) : "";
-  const subtitleText = typeof subtitle === "string" ? subtitle.trim() : "";
+  const subtitleText =
+    typeof subtitle === "string" ? formatAgentSubtitleText(subtitle) : "";
   const nameplateFontSize =
     nameplateText.length > 9 ? 0.118 : nameplateText.length > 7 ? 0.13 : 0.144;
 
@@ -1149,7 +1175,7 @@ export const AgentModel = memo(function AgentModel({
           {subtitleText ? (
             <Text
               position={[-0.02, -0.085, 0.001]}
-              fontSize={0.082}
+              fontSize={0.062}
               color="#8ab4ff"
               anchorX="center"
               anchorY="middle"

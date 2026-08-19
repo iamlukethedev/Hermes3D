@@ -44,6 +44,11 @@ export function applyAgentCollisionBumps({
       continue;
     if (moved[i].pingPongUntil !== undefined && moved[i].state !== "walking")
       continue;
+    // Conversation members are exempt while walking to and standing in the
+    // huddle: circle slots are spaced wider than the bump distance, and a
+    // bump's escape-reroute would trap approaching members in a loop of
+    // freeze, escape, and walk-back at the circle's edge.
+    if (moved[i].conversationGroupId !== undefined) continue;
     if (moved[i].bumpedUntil !== undefined) continue;
     if ((moved[i].collisionCooldownUntil ?? 0) > now) continue;
     let sx = 0,
