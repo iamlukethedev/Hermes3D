@@ -66,6 +66,144 @@ const toHermes3dMessages = (messages) => {
     }));
 };
 
+const parseTimestampMs = (value) => {
+  if (typeof value !== "string" || !value.trim()) return undefined;
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? undefined : parsed;
+};
+
+const DURATION_UNIT_MS = { s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000 };
+
+/**
+ * hermes-agent stores a schedule as one string; Hermes3D wants a tagged union.
+ *
+ * The string is a 5-field cron expression, a duration such as "30m", or an ISO
+ * timestamp for a one-shot job.
+ */
+const toHermes3dSchedule = (raw) => {
+  const value = asString(raw);
+  if (!value) return { kind: "cron", expr: "" };
+
+  const duration = /^every\s+(\d+)\s*([smhd])$/i.exec(value) || /^(\d+)\s*([smhd])$/i.exec(value);
+  if (duration) {
+    const unit = DURATION_UNIT_MS[duration[2].toLowerCase()];
+    if (unit) return { kind: "every", everyMs: Number(duration[1]) * unit };
+  }
+
+  if (value.split(/\s+/).length === 5) return { kind: "cron", expr: value };
+
+  const at = parseTimestampMs(value);
+  if (at !== undefined) return { kind: "at", at: value };
+
+  return { kind: "cron", expr: value };
+};
+
+const CRON_STATUSES = new Set(["ok", "error", "skipped"]);
+
+/**
+ * Translate hermes-agent cron rows into Hermes3D's `CronJobSummary`.
+ *
+ * The two shapes disagree on nearly every field: hermes-agent uses `job_id`, a
+ * schedule string, `prompt_preview`, ISO timestamps, and a `state` *string*,
+ * while Hermes3D expects `id`, a schedule object, a `payload` object, epoch
+ * milliseconds, and a `state` object. Forwarding the raw rows crashes the
+ * office task board, which reads `job.payload.kind` unguarded.
+ */
+const toHermes3dCronJobs = (jobs, agentId = AGENT_ID) => {
+  if (!Array.isArray(jobs)) return [];
+  return jobs
+    .filter((job) => job && typeof job === "object")
+    .map((job) => {
+      const nextRunAtMs = parseTimestampMs(job.next_run_at);
+      const lastRunAtMs = parseTimestampMs(job.last_run_at);
+      const lastStatus = asString(job.last_status).toLowerCase();
+      const lastError = asString(job.last_fire_error) || asString(job.last_delivery_error);
+      const message =
+        asString(job.prompt_preview) || asString(job.name) || "Scheduled job";
+
+      return {
+        id: asString(job.job_id) || asString(job.id),
+        name: asString(job.name) || asString(job.job_id) || "Scheduled job",
+        agentId,
+        description: asString(job.prompt_preview) || undefined,
+        enabled: job.enabled !== false,
+        updatedAtMs: lastRunAtMs ?? nextRunAtMs ?? Date.now(),
+        schedule: toHermes3dSchedule(job.schedule),
+        sessionTarget: "isolated",
+        wakeMode: "next-heartbeat",
+        payload: { kind: "agentTurn", message },
+        state: {
+          ...(nextRunAtMs !== undefined ? { nextRunAtMs } : {}),
+          ...(lastRunAtMs !== undefined ? { lastRunAtMs } : {}),
+          ...(asString(job.state).toLowerCase() === "running"
+            ? { runningAtMs: Date.now() }
+            : {}),
+          ...(CRON_STATUSES.has(lastStatus) ? { lastStatus } : {}),
+          ...(lastError ? { lastError } : {}),
+        },
+        delivery: { mode: asString(job.deliver) && job.deliver !== "none" ? "announce" : "none" },
+      };
+    })
+    .filter((job) => job.id);
+};
+
+/** Used when the backend predates `profiles.list` or the call fails. */
+const fallbackAgent = () => ({
+  id: AGENT_ID,
+  name: AGENT_NAME,
+  workspace: "",
+  identity: { name: AGENT_NAME, emoji: "🤖" },
+  role: "",
+  profile: "",
+});
+
+/** Title-case a profile directory name for display ("allan" -> "Allan"). */
+const toDisplayName = (name) =>
+  name ? name.charAt(0).toUpperCase() + name.slice(1) : "";
+
+/**
+ * Turn hermes-agent's profile list into Hermes3D agents.
+ *
+ * A profile is the backend's unit of identity — its own model, skills, memory
+ * and sessions — which is exactly what Hermes3D calls an agent. Collapsing them
+ * into one entry hides the operator's whole fleet, so each profile gets a desk.
+ *
+ * The `profile` field is what routes sessions back; the default profile carries
+ * an empty string because omitting `profile` means "launch profile" upstream.
+ */
+const toHermes3dAgents = (profiles) => {
+  if (!Array.isArray(profiles)) return [];
+  const agents = profiles
+    .filter((p) => p && typeof p === "object" && asString(p.name))
+    .map((p) => {
+      const name = asString(p.name);
+      const isDefault = p.is_default === true;
+      const display = asString(p.display_name) || toDisplayName(name);
+      // The long profile descriptions read as a role ("Allan — technical
+      // planner…"); keep the part after the dash so the desk label stays short.
+      const description = asString(p.description);
+      const role = description.includes("—")
+        ? description.split("—").slice(1).join("—").trim()
+        : description;
+      return {
+        id: name,
+        name: display,
+        workspace: asString(p.path),
+        identity: { name: display, emoji: isDefault ? "🤖" : "🧑‍💻" },
+        role,
+        model: asString(p.model),
+        isDefault,
+        profile: isDefault ? "" : name,
+      };
+    });
+  return agents;
+};
+
+const resolveDefaultAgentId = (agents) => {
+  const explicit = agents.find((a) => a.isDefault);
+  return explicit?.id ?? agents[0]?.id ?? AGENT_ID;
+};
+
 function createHermesAgentUpstream(options) {
   const {
     url,
@@ -80,7 +218,7 @@ function createHermesAgentUpstream(options) {
 
   let client;
   try {
-    client = new HermesAgentJsonRpcClient({ url, token, handshakeTimeoutMs });
+    client = new HermesAgentJsonRpcClient({ url, token, handshakeTimeoutMs, log });
   } catch (err) {
     // Defer so the caller can attach listeners before the failure lands.
     setImmediate(() => upstream.emit("error", err));
@@ -95,6 +233,15 @@ function createHermesAgentUpstream(options) {
   const sessions = new Map();
   /** runtime session id -> sessionKey */
   const sessionKeyByRuntimeId = new Map();
+  /**
+   * Hermes3D agents, one per hermes-agent profile.
+   *
+   * Profiles are the backend's fleet: each is a fully isolated instance with
+   * its own model, skills, memory, and session store. Resolved once at connect
+   * because the set only changes when the operator creates or deletes one.
+   */
+  let agentRoster = [fallbackAgent()];
+  let defaultAgentId = AGENT_ID;
   /** runId -> { sessionKey, runtimeId, buffer, aborted } */
   const activeRuns = new Map();
   /** sessionKey -> runId, so session-scoped events find their run. */
@@ -132,22 +279,53 @@ function createHermesAgentUpstream(options) {
   };
 
   /**
+   * Split `agent:<agentId>:<tail>` into the agent and the stored session id.
+   */
+  const parseSessionKey = (sessionKey) => {
+    const parts = String(sessionKey ?? "").split(":");
+    if (parts[0] !== "agent" || parts.length < 3) {
+      return { agentId: defaultAgentId, tail: "" };
+    }
+    return { agentId: parts[1] || defaultAgentId, tail: parts.slice(2).join(":") };
+  };
+
+  /**
+   * The `profile` value to send upstream for an agent.
+   *
+   * Empty means "the launch profile", which is what hermes-agent expects for
+   * the default; naming it explicitly is unnecessary and, for a backend with no
+   * profiles at all, would be rejected.
+   */
+  const profileForAgent = (agentId) => {
+    const agent = agentRoster.find((a) => a.id === agentId);
+    return agent ? asString(agent.profile) : "";
+  };
+
+  /** Main session of whichever agent is default; the roster is known only at runtime. */
+  const defaultMainKey = () => `agent:${defaultAgentId}:${MAIN_KEY}`;
+
+  /**
    * Resolve the runtime session backing a Hermes3D session key, creating or
    * resuming one on hermes-agent the first time the key is used.
+   *
+   * The agent segment of the key selects the profile, so a prompt sent to
+   * `agent:allan:main` runs with Allan's model, skills, and session store.
    */
   const ensureSession = async (sessionKey) => {
     const existing = sessions.get(sessionKey);
     if (existing?.runtimeId) return existing;
 
+    const { agentId, tail } = parseSessionKey(sessionKey);
+    const profile = profileForAgent(agentId);
+    const scope = profile ? { profile } : {};
+
     // A key of the form `agent:<id>:<storedId>` refers to a stored hermes-agent
     // session; anything else starts a fresh one.
-    const parts = sessionKey.split(":");
-    const tail = parts.length >= 3 ? parts.slice(2).join(":") : "";
     if (tail && tail !== MAIN_KEY) {
       try {
         const resumed = await client.request(
           "session.resume",
-          { session_id: tail, omit_messages: false },
+          { session_id: tail, omit_messages: false, ...scope },
           SESSION_RPC_TIMEOUT_MS
         );
         return rememberSession(sessionKey, resumed);
@@ -156,7 +334,8 @@ function createHermesAgentUpstream(options) {
       }
     }
 
-    const created = await client.request("session.create", {}, SESSION_RPC_TIMEOUT_MS);
+    const created = await client.request("session.create", scope, SESSION_RPC_TIMEOUT_MS);
+    log(`[hermes-agent] session for "${sessionKey}" -> profile "${profile || "(default)"}"`);
     return rememberSession(sessionKey, created);
   };
 
@@ -203,7 +382,10 @@ function createHermesAgentUpstream(options) {
             sessions: {
               recent: [{ key: sessionKey, updatedAt: Date.now() }],
               byAgent: [
-                { agentId: AGENT_ID, recent: [{ key: sessionKey, updatedAt: Date.now() }] },
+                {
+                  agentId: parseSessionKey(sessionKey).agentId,
+                  recent: [{ key: sessionKey, updatedAt: Date.now() }],
+                },
               ],
             },
           });
@@ -278,8 +460,30 @@ function createHermesAgentUpstream(options) {
 
   // --- method dispatch ------------------------------------------------------
 
+  /** Load the fleet once per connection; a backend without profiles keeps one agent. */
+  const loadAgentRoster = async () => {
+    try {
+      const result = await client.request("profiles.list", {}, SESSION_RPC_TIMEOUT_MS);
+      const mapped = toHermes3dAgents(result?.profiles);
+      if (mapped.length > 0) {
+        agentRoster = mapped;
+        defaultAgentId = resolveDefaultAgentId(mapped);
+        log(`[hermes-agent] ${mapped.length} profile(s) mapped to agents: ${mapped.map((a) => a.id).join(", ")}`);
+        return;
+      }
+      log("[hermes-agent] profiles.list returned nothing; using a single agent");
+    } catch (err) {
+      log(`[hermes-agent] profiles.list unavailable (${errorMessage(err)}); using a single agent`);
+    }
+  };
+
   const handleConnect = async (id) => {
-    const agents = [{ agentId: AGENT_ID, name: AGENT_NAME, isDefault: true }];
+    await loadAgentRoster();
+    const agents = agentRoster.map((a) => ({
+      agentId: a.id,
+      name: a.name,
+      isDefault: a.id === defaultAgentId,
+    }));
     return resOk(id, {
       type: "hello-ok",
       protocol: 3,
@@ -313,7 +517,7 @@ function createHermesAgentUpstream(options) {
         events: ["chat", "agent", "presence", "heartbeat", "cron"],
       },
       snapshot: {
-        health: { agents, defaultAgentId: AGENT_ID },
+        health: { agents, defaultAgentId },
         sessionDefaults: { mainKey: MAIN_KEY },
       },
       auth: { role: "operator", scopes: ["operator.admin", "operator.approvals"] },
@@ -327,17 +531,15 @@ function createHermesAgentUpstream(options) {
     switch (method) {
       case "agents.list":
         return resOk(id, {
-          defaultId: AGENT_ID,
+          defaultId: defaultAgentId,
           mainKey: MAIN_KEY,
-          agents: [
-            {
-              id: AGENT_ID,
-              name: AGENT_NAME,
-              workspace: "",
-              identity: { name: AGENT_NAME, emoji: "🤖" },
-              role: "",
-            },
-          ],
+          agents: agentRoster.map(({ id: agentId, name, workspace, identity, role }) => ({
+            id: agentId,
+            name,
+            workspace,
+            identity,
+            role,
+          })),
         });
 
       case "agents.files.get":
@@ -359,32 +561,42 @@ function createHermesAgentUpstream(options) {
         return resOk(id, { hash: "hermes-agent" });
 
       case "sessions.list": {
-        let stored = [];
-        try {
-          const result = await client.request("session.list", { limit: 50 });
-          stored = Array.isArray(result?.sessions) ? result.sessions : [];
-        } catch (err) {
-          log(`[hermes-agent] session.list failed: ${errorMessage(err)}`);
-        }
-        const list = [
-          {
-            key: MAIN_SESSION_KEY,
-            agentId: AGENT_ID,
-            updatedAt: Date.now(),
-            displayName: "Main",
-            origin: { label: AGENT_NAME, provider: "hermes" },
-            modelProvider: "hermes",
-          },
-          ...stored.map((s) => ({
-            key: `agent:${AGENT_ID}:${asString(s.id)}`,
-            agentId: AGENT_ID,
-            updatedAt: typeof s.started_at === "number" ? s.started_at * 1000 : null,
-            displayName: asString(s.title, "Session"),
-            origin: { label: AGENT_NAME, provider: "hermes" },
-            modelProvider: "hermes",
-          })),
-        ];
-        return resOk(id, { sessions: list });
+        // Each profile keeps its own session store, so the stored rows have to
+        // be read per agent; they're local SQLite reads, so fan out in parallel.
+        const perAgent = await Promise.all(
+          agentRoster.map(async (agent) => {
+            const profile = asString(agent.profile);
+            let stored = [];
+            try {
+              const result = await client.request("session.list", {
+                limit: 20,
+                ...(profile ? { profile } : {}),
+              });
+              stored = Array.isArray(result?.sessions) ? result.sessions : [];
+            } catch (err) {
+              log(`[hermes-agent] session.list for "${agent.id}" failed: ${errorMessage(err)}`);
+            }
+            return [
+              {
+                key: `agent:${agent.id}:${MAIN_KEY}`,
+                agentId: agent.id,
+                updatedAt: Date.now(),
+                displayName: "Main",
+                origin: { label: agent.name, provider: "hermes" },
+                modelProvider: "hermes",
+              },
+              ...stored.map((s) => ({
+                key: `agent:${agent.id}:${asString(s.id)}`,
+                agentId: agent.id,
+                updatedAt: typeof s.started_at === "number" ? s.started_at * 1000 : null,
+                displayName: asString(s.title, "Session"),
+                origin: { label: agent.name, provider: "hermes" },
+                modelProvider: "hermes",
+              })),
+            ];
+          })
+        );
+        return resOk(id, { sessions: perAgent.flat() });
       }
 
       case "sessions.preview": {
@@ -416,7 +628,7 @@ function createHermesAgentUpstream(options) {
       }
 
       case "sessions.patch": {
-        const key = asString(p.key, MAIN_SESSION_KEY);
+        const key = asString(p.key, defaultMainKey());
         const model = typeof p.model === "string" ? p.model.trim() : "";
         if (model) {
           try {
@@ -439,7 +651,7 @@ function createHermesAgentUpstream(options) {
       }
 
       case "sessions.reset": {
-        const key = asString(p.key, MAIN_SESSION_KEY);
+        const key = asString(p.key, defaultMainKey());
         const entry = sessions.get(key);
         if (entry?.runtimeId) {
           sessionKeyByRuntimeId.delete(entry.runtimeId);
@@ -452,7 +664,7 @@ function createHermesAgentUpstream(options) {
       }
 
       case "chat.send": {
-        const sessionKey = asString(p.sessionKey, MAIN_SESSION_KEY);
+        const sessionKey = asString(p.sessionKey, defaultMainKey());
         const text =
           typeof p.message === "string" ? p.message.trim() : String(p.message ?? "").trim();
         const runId = asString(p.idempotencyKey) || randomUUID();
@@ -504,7 +716,7 @@ function createHermesAgentUpstream(options) {
       }
 
       case "chat.history": {
-        const sessionKey = asString(p.sessionKey, MAIN_SESSION_KEY);
+        const sessionKey = asString(p.sessionKey, defaultMainKey());
         const entry = sessions.get(sessionKey);
         if (!entry?.runtimeId) return resOk(id, { sessionKey, messages: [] });
         try {
@@ -530,16 +742,18 @@ function createHermesAgentUpstream(options) {
 
       case "status": {
         const recent = [...sessions.keys()].map((key) => ({ key, updatedAt: Date.now() }));
-        return resOk(id, {
-          sessions: { recent, byAgent: [{ agentId: AGENT_ID, recent }] },
-        });
+        const byAgent = agentRoster.map((agent) => ({
+          agentId: agent.id,
+          recent: recent.filter((entry) => parseSessionKey(entry.key).agentId === agent.id),
+        }));
+        return resOk(id, { sessions: { recent, byAgent } });
       }
 
       case "wake": {
         const text = asString(p.text);
         if (!text) return resOk(id, { ok: true });
         try {
-          const entry = await ensureSession(MAIN_SESSION_KEY);
+          const entry = await ensureSession(defaultMainKey());
           await client.request("prompt.submit", { session_id: entry.runtimeId, text });
         } catch (err) {
           log(`[hermes-agent] wake failed: ${errorMessage(err)}`);
@@ -573,10 +787,12 @@ function createHermesAgentUpstream(options) {
 
       case "cron.list": {
         try {
+          // cron.manage reads the launch profile's scheduler, so the jobs
+          // belong to whichever agent that profile maps to.
           const result = await client.request("cron.manage", { action: "list" });
-          const jobs = Array.isArray(result?.jobs) ? result.jobs : [];
-          return resOk(id, { jobs });
-        } catch {
+          return resOk(id, { jobs: toHermes3dCronJobs(result?.jobs, defaultAgentId) });
+        } catch (err) {
+          log(`[hermes-agent] cron.manage failed: ${errorMessage(err)}`);
           return resOk(id, { jobs: [] });
         }
       }
@@ -686,6 +902,10 @@ function createHermesAgentUpstream(options) {
 module.exports = {
   createHermesAgentUpstream,
   toHermes3dMessages,
+  toHermes3dCronJobs,
+  toHermes3dSchedule,
+  toHermes3dAgents,
+  resolveDefaultAgentId,
   MAIN_SESSION_KEY,
   AGENT_ID,
 };

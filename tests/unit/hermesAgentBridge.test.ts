@@ -129,6 +129,292 @@ describe("buildJsonRpcUrl", () => {
   });
 });
 
+describe("loopback Host fallback", () => {
+  /**
+   * Stands in for a loopback-bound hermes-agent behind Tailscale Serve, which
+   * forwards the client's Host verbatim: the tailnet name is refused with 4403
+   * and only a loopback Host gets through.
+   */
+  const startHostStrictAgent = async () => {
+    const wss = new WebSocketServer({ port: 0 });
+    servers.push(wss);
+    await new Promise<void>((resolve) => wss.on("listening", () => resolve()));
+
+    const hostsSeen: string[] = [];
+    wss.on("connection", (ws: WsSocket, req) => {
+      const host = String(req.headers.host ?? "");
+      hostsSeen.push(host);
+      const hostOnly = host.split(":")[0].toLowerCase();
+      if (!["localhost", "127.0.0.1", "::1"].includes(hostOnly)) {
+        ws.close(4403, "host_mismatch");
+        return;
+      }
+      ws.send(JSON.stringify({ jsonrpc: "2.0", method: "event", params: { type: "gateway.ready", payload: {} } }));
+    });
+
+    const { port } = wss.address() as AddressInfo;
+    return { port, hostsSeen };
+  };
+
+  it("retries with a loopback Host when the backend refuses the forwarded one", async () => {
+    const { port, hostsSeen } = await startHostStrictAgent();
+    const { HermesAgentJsonRpcClient } = await import("../../server/hermes-agent/jsonrpc-client");
+
+    // 127.0.0.1 resolves, but the Host header carries a name the backend rejects.
+    const client = new HermesAgentJsonRpcClient({ url: `ws://127.0.0.1:${port}`, token: "t" });
+    client.hostHeader = "luke-hermes.taildb786a.ts.net";
+    client.loopbackHostFallback = true;
+
+    const ready = new Promise<void>((resolve, reject) => {
+      client.on("ready", () => resolve());
+      client.on("close", (code: number) => reject(new Error(`closed ${code}`)));
+      setTimeout(() => reject(new Error("never became ready")), 5000);
+    });
+    client.connect();
+    await ready;
+
+    expect(hostsSeen[0]).toBe("luke-hermes.taildb786a.ts.net");
+    expect(hostsSeen[1]).toBe("localhost");
+    expect(client.usedLoopbackHost).toBe(true);
+    client.terminate();
+  });
+
+  it("retries when the upgrade is refused with HTTP 403 before accepting", async () => {
+    // How a loopback-bound hermes-agent actually refuses a foreign Host on
+    // /api/ws: the handshake is rejected outright rather than accepted-then-closed.
+    const hostsSeen: string[] = [];
+    const wss = new WebSocketServer({
+      port: 0,
+      verifyClient: ({ req }, done) => {
+        const host = String(req.headers.host ?? "");
+        hostsSeen.push(host);
+        done(host.split(":")[0].toLowerCase() === "localhost", 403);
+      },
+    });
+    servers.push(wss);
+    await new Promise<void>((resolve) => wss.on("listening", () => resolve()));
+    wss.on("connection", (ws: WsSocket) => {
+      ws.send(JSON.stringify({ jsonrpc: "2.0", method: "event", params: { type: "gateway.ready", payload: {} } }));
+    });
+    const { port } = wss.address() as AddressInfo;
+
+    const { HermesAgentJsonRpcClient } = await import("../../server/hermes-agent/jsonrpc-client");
+    const client = new HermesAgentJsonRpcClient({ url: `ws://127.0.0.1:${port}`, token: "t" });
+    client.hostHeader = "luke-hermes.taildb786a.ts.net";
+
+    const ready = new Promise<void>((resolve, reject) => {
+      client.on("ready", () => resolve());
+      client.on("error", (e: Error) => reject(e));
+      setTimeout(() => reject(new Error("never became ready")), 5000);
+    });
+    client.connect();
+    await ready;
+
+    expect(hostsSeen[0]).toBe("luke-hermes.taildb786a.ts.net");
+    expect(hostsSeen[1]).toBe("localhost");
+    client.terminate();
+  });
+
+  it("gives up after one retry rather than looping", async () => {
+    const wss = new WebSocketServer({ port: 0 });
+    servers.push(wss);
+    await new Promise<void>((resolve) => wss.on("listening", () => resolve()));
+    let attempts = 0;
+    wss.on("connection", (ws: WsSocket) => {
+      attempts += 1;
+      ws.close(4403, "host_mismatch");
+    });
+    const { port } = wss.address() as AddressInfo;
+
+    const { HermesAgentJsonRpcClient } = await import("../../server/hermes-agent/jsonrpc-client");
+    const client = new HermesAgentJsonRpcClient({ url: `ws://127.0.0.1:${port}`, token: "t" });
+
+    const closed = new Promise<number>((resolve) => client.on("close", (code: number) => resolve(code)));
+    client.connect();
+    expect(await closed).toBe(4403);
+    expect(attempts).toBe(2);
+  });
+});
+
+describe("profiles as agents", () => {
+  // Verbatim rows from a live hermes-agent `profiles.list`.
+  const backendProfiles = [
+    {
+      name: "default",
+      path: "/Users/lukeai1/.hermes",
+      is_default: true,
+      model: "claude-haiku-4-5-20251001",
+      description: "",
+      display_name: "",
+    },
+    {
+      name: "allan",
+      path: "/Users/lukeai1/.hermes/profiles/allan",
+      is_default: false,
+      model: "claude-haiku-4-5-20251001",
+      description:
+        "Allan — technical planner and business systems analyst for Smartways. Converts Jira tickets into plans.",
+      display_name: "",
+    },
+    {
+      name: "andrew",
+      path: "/Users/lukeai1/.hermes/profiles/andrew",
+      is_default: false,
+      model: "claude-opus-4-8",
+      description: "Andrew — senior full-stack software developer for Smartways.",
+      display_name: "",
+    },
+  ];
+
+  it("gives every profile its own agent", async () => {
+    const { toHermes3dAgents } = await import("../../server/hermes-agent/bridge");
+    const agents = toHermes3dAgents(backendProfiles);
+    expect(agents.map((a) => a.id)).toEqual(["default", "allan", "andrew"]);
+    expect(agents.map((a) => a.name)).toEqual(["Default", "Allan", "Andrew"]);
+  });
+
+  it("routes non-default agents by profile and leaves the default unnamed", async () => {
+    const { toHermes3dAgents } = await import("../../server/hermes-agent/bridge");
+    const [def, allan] = toHermes3dAgents(backendProfiles);
+    // An empty profile means "launch profile" upstream; naming it is wrong.
+    expect(def.profile).toBe("");
+    expect(allan.profile).toBe("allan");
+  });
+
+  it("uses the description after the dash as the role", async () => {
+    const { toHermes3dAgents } = await import("../../server/hermes-agent/bridge");
+    const allan = toHermes3dAgents(backendProfiles)[1];
+    expect(allan.role.startsWith("technical planner")).toBe(true);
+  });
+
+  it("picks the flagged profile as the default agent", async () => {
+    const { toHermes3dAgents, resolveDefaultAgentId } = await import(
+      "../../server/hermes-agent/bridge"
+    );
+    expect(resolveDefaultAgentId(toHermes3dAgents(backendProfiles))).toBe("default");
+  });
+
+  it("ignores unusable rows", async () => {
+    const { toHermes3dAgents } = await import("../../server/hermes-agent/bridge");
+    expect(toHermes3dAgents([null, {}, "x", { name: "" }])).toEqual([]);
+    expect(toHermes3dAgents(undefined)).toEqual([]);
+  });
+
+  it("advertises every profile and creates sessions against the right one", async () => {
+    const createCalls: Frame[] = [];
+    const agent = await startFakeHermesAgent({
+      "profiles.list": () => ({ profiles: backendProfiles }),
+      "session.create": (params) => {
+        createCalls.push(params);
+        return { session_id: `rt-${createCalls.length}` };
+      },
+      "prompt.submit": () => ({}),
+    });
+    const bridge = await openBridge(agent.url);
+
+    bridge.send({ type: "req", id: "c1", method: "connect", params: {} });
+    await bridge.waitFor((f) => f.type === "res" && f.id === "c1", "hello-ok");
+
+    bridge.send({ type: "req", id: "a1", method: "agents.list", params: {} });
+    const listed = await bridge.waitFor((f) => f.type === "res" && f.id === "a1", "agents.list");
+    expect((at(listed, "payload.agents") as unknown[]).length).toBe(3);
+
+    // A prompt aimed at Allan's desk must run under Allan's profile.
+    bridge.send({
+      type: "req",
+      id: "s1",
+      method: "chat.send",
+      params: { sessionKey: "agent:allan:main", message: "hi" },
+    });
+    await bridge.waitFor((f) => f.type === "res" && f.id === "s1", "chat.send");
+    expect(createCalls.at(-1)).toEqual({ profile: "allan" });
+
+    // The default agent must NOT send a profile — that means "launch profile".
+    bridge.send({
+      type: "req",
+      id: "s2",
+      method: "chat.send",
+      params: { sessionKey: "agent:default:main", message: "hi" },
+    });
+    await bridge.waitFor((f) => f.type === "res" && f.id === "s2", "chat.send default");
+    expect(createCalls.at(-1)).toEqual({});
+  });
+
+  it("falls back to a single agent when the backend has no profiles.list", async () => {
+    const agent = await startFakeHermesAgent({});
+    const bridge = await openBridge(agent.url);
+    bridge.send({ type: "req", id: "c1", method: "connect", params: {} });
+    const res = await bridge.waitFor((f) => f.type === "res" && f.id === "c1", "hello-ok");
+    expect((at(res, "payload.snapshot.health.agents") as unknown[]).length).toBe(1);
+    expect(at(res, "payload.snapshot.health.defaultAgentId")).toBe("hermes");
+  });
+});
+
+describe("toHermes3dCronJobs", () => {
+  // Verbatim row shape returned by a live hermes-agent `cron.manage` list.
+  const agentJob = {
+    job_id: "f43da87997a8",
+    name: "Daily token spend - morning briefing",
+    prompt_preview: "Run `hermes insights --days 1` and extract today's data.",
+    schedule: "0 7 * * *",
+    repeat: "forever",
+    deliver: "origin",
+    next_run_at: "2026-08-19T07:00:00-05:00",
+    last_run_at: "2026-08-18T07:00:40.472539-05:00",
+    last_status: "ok",
+    last_delivery_error: null,
+    last_fire_error: null,
+    enabled: true,
+    state: "scheduled",
+  };
+
+  it("fills in the fields the office task board reads unguarded", async () => {
+    const { toHermes3dCronJobs } = await import("../../server/hermes-agent/bridge");
+    const [job] = toHermes3dCronJobs([agentJob]);
+
+    // These four are exactly what crashed the office page when forwarded raw.
+    expect(job.id).toBe("f43da87997a8");
+    expect(job.payload).toEqual({ kind: "agentTurn", message: agentJob.prompt_preview });
+    expect(job.schedule).toEqual({ kind: "cron", expr: "0 7 * * *" });
+    expect(typeof job.state).toBe("object");
+    expect(job.state.lastStatus).toBe("ok");
+    expect(job.state.nextRunAtMs).toBe(Date.parse(agentJob.next_run_at));
+    expect(Number.isFinite(job.updatedAtMs)).toBe(true);
+  });
+
+  it("marks a running job so the board can show it as working", async () => {
+    const { toHermes3dCronJobs } = await import("../../server/hermes-agent/bridge");
+    const [job] = toHermes3dCronJobs([{ ...agentJob, state: "running" }]);
+    expect(typeof job.state.runningAtMs).toBe("number");
+  });
+
+  it("surfaces a failure so the board can flag it", async () => {
+    const { toHermes3dCronJobs } = await import("../../server/hermes-agent/bridge");
+    const [job] = toHermes3dCronJobs([
+      { ...agentJob, last_status: "error", last_fire_error: "boom" },
+    ]);
+    expect(job.state.lastStatus).toBe("error");
+    expect(job.state.lastError).toBe("boom");
+  });
+
+  it("drops rows with no id and tolerates junk", async () => {
+    const { toHermes3dCronJobs } = await import("../../server/hermes-agent/bridge");
+    expect(toHermes3dCronJobs([{}, null, "nope", { name: "no id" }])).toEqual([]);
+    expect(toHermes3dCronJobs(undefined)).toEqual([]);
+  });
+
+  it("reads the other schedule spellings hermes-agent emits", async () => {
+    const { toHermes3dSchedule } = await import("../../server/hermes-agent/bridge");
+    expect(toHermes3dSchedule("30m")).toEqual({ kind: "every", everyMs: 1_800_000 });
+    expect(toHermes3dSchedule("every 2h")).toEqual({ kind: "every", everyMs: 7_200_000 });
+    expect(toHermes3dSchedule("0 9 * * *")).toEqual({ kind: "cron", expr: "0 9 * * *" });
+    expect(toHermes3dSchedule("2026-06-01T09:00:00Z")).toEqual({
+      kind: "at",
+      at: "2026-06-01T09:00:00Z",
+    });
+  });
+});
+
 describe("toHermes3dMessages", () => {
   it("renames text to content and drops non-conversational rows", () => {
     expect(

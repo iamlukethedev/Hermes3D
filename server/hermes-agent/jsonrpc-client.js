@@ -56,7 +56,33 @@ const buildJsonRpcUrl = (baseUrl, token) => {
 /** Strip the token so URLs are safe to log. */
 const redactUrl = (url) => String(url).replace(/([?&]token=)[^&]*/gi, "$1***");
 
-const describeCloseCode = (code, reason) => {
+/**
+ * Host header used to retry an upgrade a loopback-bound backend refused.
+ *
+ * A backend bound to loopback only accepts loopback Host values, and Tailscale
+ * Serve forwards the client's Host verbatim, so a tailnet URL arrives carrying
+ * a name the backend will not accept. Sending a loopback Host instead satisfies
+ * the check without weakening it: Serve routes on the published port, and the
+ * backend still requires the peer itself to be loopback.
+ *
+ * This is a fallback rather than the default because a backend bound to an
+ * explicit non-loopback address requires the Host to match that address.
+ */
+const LOOPBACK_HOST_HEADER = "localhost";
+
+/**
+ * Upgrade rejections that a different Host header could plausibly fix.
+ *
+ * A loopback-bound backend refuses a foreign Host on the WebSocket route with
+ * HTTP 403 (the HTTP-only Host middleware answers 400, and the post-accept
+ * guard closes with 4403). 403 is also how it refuses a bad token, so a retry
+ * can be spent on an unrelated failure — that costs one extra handshake and
+ * then reports the original error.
+ */
+const isHostRejection = (closeCode, httpStatus) =>
+  closeCode === CLOSE_FORBIDDEN || httpStatus === 400 || httpStatus === 403;
+
+const describeCloseCode = (code, reason, triedLoopbackHost = false) => {
   if (code === CLOSE_AUTH_FAILED) {
     return (
       "hermes-agent rejected the credential (4401). If the backend is bound to a " +
@@ -66,8 +92,10 @@ const describeCloseCode = (code, reason) => {
   }
   if (code === CLOSE_FORBIDDEN) {
     return (
-      "hermes-agent refused the connection (4403). Its embedded chat may be " +
-      "disabled, or the Host/Origin did not match the address it was bound to."
+      "hermes-agent refused the connection (4403)." +
+      (triedLoopbackHost ? " A loopback Host header was also refused." : "") +
+      " Its embedded chat may be disabled, the peer may not be reaching it over " +
+      "loopback, or the Host/Origin did not match the address it was bound to."
     );
   }
   return `hermes-agent closed the connection (${code})${reason ? `: ${reason}` : ""}`;
@@ -81,46 +109,116 @@ const describeCloseCode = (code, reason) => {
  *   "error"  (Error)
  */
 class HermesAgentJsonRpcClient extends EventEmitter {
-  constructor({ url, token, requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS, handshakeTimeoutMs }) {
+  constructor({
+    url,
+    token,
+    requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
+    handshakeTimeoutMs = undefined,
+    hostHeader = "",
+    loopbackHostFallback = true,
+    log = () => {},
+  }) {
     super();
+    this.log = log;
     this.url = buildJsonRpcUrl(url, token);
     this.requestTimeoutMs = requestTimeoutMs;
     this.handshakeTimeoutMs = handshakeTimeoutMs;
+    this.hostHeader = typeof hostHeader === "string" ? hostHeader.trim() : "";
+    // An explicit Host is a deliberate choice; never second-guess it.
+    this.loopbackHostFallback = loopbackHostFallback && !this.hostHeader;
     this.ws = null;
     this.nextId = 1;
     this.pending = new Map();
     this.ready = false;
     this.closed = false;
+    this.usedLoopbackHost = false;
+    this._retryPending = false;
   }
 
   connect() {
-    this.ws = new WebSocket(this.url, { handshakeTimeout: this.handshakeTimeoutMs });
+    this._openSocket(this.hostHeader);
+  }
 
-    this.ws.on("message", (raw) => this._onMessage(raw));
+  _openSocket(hostHeader) {
+    const options = { handshakeTimeout: this.handshakeTimeoutMs };
+    if (hostHeader) options.headers = { Host: hostHeader };
 
-    this.ws.on("close", (code, reasonBuffer) => {
+    this.log(
+      `[hermes-agent] opening ${redactUrl(this.url)} ` +
+        `(Host: ${hostHeader || "default from URL"})`,
+    );
+
+    const ws = new WebSocket(this.url, options);
+    this.ws = ws;
+
+    ws.on("open", () => this.log("[hermes-agent] upgrade accepted; waiting for gateway.ready"));
+    ws.on("message", (raw) => this._onMessage(raw));
+
+    ws.on("close", (code, reasonBuffer) => {
       const reason = Buffer.isBuffer(reasonBuffer) ? reasonBuffer.toString() : String(reasonBuffer ?? "");
-      this._failAllPending(new Error(describeCloseCode(code, reason)));
+      if (this._retryPending) return;
+      if (this._retryWithLoopbackHost(code, undefined)) return;
+      this.log(`[hermes-agent] closed (${code})${reason ? `: ${reason}` : ""}`);
+      this._failAllPending(new Error(describeCloseCode(code, reason, this.usedLoopbackHost)));
       this.ready = false;
       this.closed = true;
       this.emit("close", code, reason);
     });
 
-    this.ws.on("error", (err) => {
+    ws.on("error", (err) => {
+      // A rejected upgrade also surfaces here; stay quiet while a retry is
+      // queued so a recoverable rejection isn't reported as a failure.
+      if (this._retryPending) return;
       this._failAllPending(err instanceof Error ? err : new Error(String(err)));
       this.emit("error", err instanceof Error ? err : new Error(String(err)));
     });
 
     // The upgrade itself can be rejected before any frame arrives; surface the
     // status rather than letting it look like a generic socket error.
-    this.ws.on("unexpected-response", (_req, res) => {
+    ws.on("unexpected-response", (_req, res) => {
       const status = res?.statusCode;
+      this.log(`[hermes-agent] upgrade rejected with HTTP ${status}`);
+      if (this._retryWithLoopbackHost(undefined, status)) return;
       const message =
         status === 401
-          ? describeCloseCode(CLOSE_AUTH_FAILED, "")
+          ? describeCloseCode(CLOSE_AUTH_FAILED, "", this.usedLoopbackHost)
           : `hermes-agent rejected the WebSocket upgrade (HTTP ${status}).`;
       this.emit("error", new Error(message));
     });
+  }
+
+  /**
+   * Reopen with a loopback Host when the backend refused the one we sent.
+   *
+   * Returns true when a retry was started, so the caller suppresses the
+   * failure it was about to report.
+   */
+  _retryWithLoopbackHost(closeCode, httpStatus) {
+    if (!this.loopbackHostFallback || this.usedLoopbackHost || this.closed) return false;
+    if (!isHostRejection(closeCode, httpStatus)) return false;
+
+    this.log(
+      `[hermes-agent] backend refused the Host header ` +
+        `(${closeCode !== undefined ? `close ${closeCode}` : `HTTP ${httpStatus}`}); ` +
+        `retrying once with Host: ${LOOPBACK_HOST_HEADER}`,
+    );
+    this.usedLoopbackHost = true;
+    this._retryPending = true;
+    const discarded = this.ws;
+    try {
+      discarded?.removeAllListeners();
+      // A rejected handshake still emits "error"; without a listener Node
+      // would treat it as unhandled and crash the process.
+      discarded?.on("error", () => {});
+      discarded?.terminate();
+    } catch {}
+    // Let the rejected socket finish tearing down before reconnecting.
+    setImmediate(() => {
+      this._retryPending = false;
+      if (this.closed) return;
+      this._openSocket(LOOPBACK_HOST_HEADER);
+    });
+    return true;
   }
 
   _onMessage(raw) {
@@ -203,4 +301,5 @@ module.exports = {
   redactUrl,
   describeCloseCode,
   HERMES_AGENT_WS_PATH,
+  LOOPBACK_HOST_HEADER,
 };

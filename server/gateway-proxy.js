@@ -2,6 +2,7 @@ const { Buffer } = require("node:buffer");
 const { WebSocket, WebSocketServer } = require("ws");
 
 const { createHermesAgentUpstream } = require("./hermes-agent/bridge");
+const { redactUrl } = require("./hermes-agent/jsonrpc-client");
 
 const DEFAULT_UPSTREAM_HANDSHAKE_TIMEOUT_MS = 10_000;
 
@@ -230,6 +231,7 @@ function createGatewayProxy(options) {
     };
 
     const sendConnectError = (code, message) => {
+      logError(`[gateway-proxy] connect failed (${code}): ${message}`);
       if (connectRequestId && !connectResponseSent) {
         connectResponseSent = true;
         sendToBrowser(buildErrorResponse(connectRequestId, code, message));
@@ -303,7 +305,13 @@ function createGatewayProxy(options) {
         return;
       }
 
+      log(
+        `[gateway-proxy] upstream settings: adapterType=${upstreamAdapterType || "(unset)"} ` +
+          `url=${redactUrl(upstreamUrl)} token=${upstreamToken ? "present" : "absent"}`,
+      );
+
       if (upstreamAdapterType === EMBEDDED_ADAPTER_TYPE) {
+        log("[gateway-proxy] transport: embedded hermes-agent bridge (JSON-RPC translation)");
         upstreamWs = createHermesAgentUpstream({
           url: upstreamUrl,
           token: upstreamToken,
@@ -312,6 +320,13 @@ function createGatewayProxy(options) {
           logError,
         });
       } else {
+        // A raw socket expects the peer to speak the Hermes3D gateway protocol.
+        // Pointing it at a hermes-agent backend cannot work: that backend speaks
+        // JSON-RPC and needs adapterType "hermes-agent" to get the bridge.
+        log(
+          `[gateway-proxy] transport: raw WebSocket (adapterType=${upstreamAdapterType || "(unset)"}). ` +
+            `The peer must speak the Hermes3D gateway protocol.`,
+        );
         let upstreamOrigin = "";
         try {
           upstreamOrigin = resolveOriginForUpstream(upstreamUrl);

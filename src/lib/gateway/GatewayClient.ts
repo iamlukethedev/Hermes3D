@@ -172,6 +172,7 @@ const normalizeLocalGatewayDefaults = (value: unknown): StudioGatewaySettings | 
   const adapterType =
     raw.adapterType === "demo" ||
     raw.adapterType === "hermes" ||
+    raw.adapterType === "hermes-agent" ||
     raw.adapterType === "local" ||
     raw.adapterType === "hermes3d" ||
     raw.adapterType === "custom"
@@ -197,7 +198,14 @@ const normalizeGatewayProfilesPublic = (
   if (!value || typeof value !== "object") return undefined;
   const raw = value as Partial<Record<StudioGatewayAdapterType, StudioGatewayProfilePublic>>;
   const profiles: Partial<Record<StudioGatewayAdapterType, { url: string; token: string }>> = {};
-  for (const adapterType of ["hermes", "demo", "local", "hermes3d", "custom"] as const) {
+  for (const adapterType of [
+    "hermes",
+    "hermes-agent",
+    "demo",
+    "local",
+    "hermes3d",
+    "custom",
+  ] as const) {
     const profile = normalizeGatewayProfilePublic(raw[adapterType]);
     if (profile) {
       profiles[adapterType] = profile;

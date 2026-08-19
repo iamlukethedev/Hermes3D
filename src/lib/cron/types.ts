@@ -106,7 +106,8 @@ const formatEveryMs = (everyMs: number) => {
   return `${everyMs}ms`;
 };
 
-export const formatCronSchedule = (schedule: CronSchedule) => {
+export const formatCronSchedule = (schedule: CronSchedule | null | undefined) => {
+  if (!schedule) return "";
   if (schedule.kind === "every") {
     return `Every ${formatEveryMs(schedule.everyMs)}`;
   }
@@ -118,9 +119,12 @@ export const formatCronSchedule = (schedule: CronSchedule) => {
   return `At: ${atDate.toLocaleString()}`;
 };
 
-export const formatCronPayload = (payload: CronPayload) => {
-  if (payload.kind === "systemEvent") return payload.text;
-  return payload.message;
+export const formatCronPayload = (payload: CronPayload | null | undefined) => {
+  // A gateway can hand back a job row without a payload; one malformed row
+  // must not take down every view that renders a job.
+  if (!payload) return "";
+  if (payload.kind === "systemEvent") return payload.text ?? "";
+  return payload.message ?? "";
 };
 
 export const formatCronJobDisplay = (job: CronJobSummary) => {

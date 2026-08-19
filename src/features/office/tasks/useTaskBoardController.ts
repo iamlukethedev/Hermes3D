@@ -535,9 +535,10 @@ const buildPlaybookCards = (
       existingCards.find((card) => card.playbookJobId === job.id) ??
       existingCards.find((card) => card.id === `playbook:${job.id}`) ??
       null;
-    const inferredStatus: TaskBoardStatus = job.state.runningAtMs
+    const jobState = job.state ?? {};
+    const inferredStatus: TaskBoardStatus = jobState.runningAtMs
       ? "working"
-      : job.state.lastStatus === "error"
+      : jobState.lastStatus === "error"
         ? "needs_attention"
         : existing?.status === "done"
           ? "done"
@@ -560,7 +561,7 @@ const buildPlaybookCards = (
       channel: existing?.channel ?? null,
       externalThreadId: existing?.externalThreadId ?? null,
       lastActivityAt: new Date(
-        job.state.runningAtMs ?? job.state.lastRunAtMs ?? job.updatedAtMs,
+        jobState.runningAtMs ?? jobState.lastRunAtMs ?? job.updatedAtMs,
       ).toISOString(),
       notes: existing?.notes ?? [],
       isArchived: existing?.isArchived ?? false,
