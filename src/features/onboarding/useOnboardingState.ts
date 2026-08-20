@@ -3,13 +3,34 @@
  *
  * Uses localStorage so the wizard only shows once per browser.
  * The key is scoped to the Hermes3D app to avoid collisions.
+ *
+ * localStorage is an external store, so the value is read through
+ * useSyncExternalStore: the server snapshot reports "completed" (the wizard
+ * never flashes during SSR/hydration) and the client corrects it right after
+ * hydration, which is the same first paint the old mount-effect produced
+ * without setting state from an effect.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useSyncExternalStore } from "react";
 
 const STORAGE_KEY = "hermes3d:onboarding:completed";
 
+const listeners = new Set<() => void>();
+
+const emitChange = (): void => {
+  for (const listener of listeners) listener();
+};
+
+const subscribe = (listener: () => void): (() => void) => {
+  listeners.add(listener);
+  // Keep multiple tabs in sync: "storage" fires for writes from other tabs.
+  window.addEventListener("storage", listener);
+  return () => {
+    listeners.delete(listener);
+    window.removeEventListener("storage", listener);
+  };
+};
+
 const readCompleted = (): boolean => {
-  if (typeof window === "undefined") return false;
   try {
     return window.localStorage.getItem(STORAGE_KEY) === "true";
   } catch {
@@ -17,8 +38,9 @@ const readCompleted = (): boolean => {
   }
 };
 
+const readCompletedOnServer = (): boolean => true;
+
 const writeCompleted = (value: boolean): void => {
-  if (typeof window === "undefined") return;
   try {
     if (value) {
       window.localStorage.setItem(STORAGE_KEY, "true");
@@ -28,6 +50,7 @@ const writeCompleted = (value: boolean): void => {
   } catch {
     // Storage might be unavailable in some environments.
   }
+  emitChange();
 };
 
 export type OnboardingStateReturn = {
@@ -40,24 +63,22 @@ export type OnboardingStateReturn = {
 };
 
 export const useOnboardingState = (): OnboardingStateReturn => {
-  const [completed, setCompleted] = useState<boolean | null>(null);
-
-  useEffect(() => {
-    setCompleted(readCompleted());
-  }, []);
+  const completed = useSyncExternalStore(
+    subscribe,
+    readCompleted,
+    readCompletedOnServer,
+  );
 
   const completeOnboarding = useCallback(() => {
-    setCompleted(true);
     writeCompleted(true);
   }, []);
 
   const resetOnboarding = useCallback(() => {
-    setCompleted(false);
     writeCompleted(false);
   }, []);
 
   return {
-    showOnboarding: completed === false,
+    showOnboarding: !completed,
     completeOnboarding,
     resetOnboarding,
   };

@@ -59,8 +59,6 @@ import type {
 import { extractSpeechImage } from "@/lib/text/speech-image";
 import { MonitorImmersiveContent as MonitorImmersiveOverlay } from "@/features/retro-office/overlays/MonitorImmersiveContent";
 import {
-  AGENT_RADIUS,
-  BUMP_FREEZE_MS,
   BUMP_RECOVERY_MS,
   CANVAS_H,
   CANVAS_W,
@@ -73,7 +71,6 @@ import {
   PING_PONG_SESSION_MS,
   ROTATION_STEP_DEG,
   SCALE,
-  SEPARATION_STRENGTH,
   SNAP_GRID,
   WALK_SPEED,
   WALL_THICKNESS,
@@ -2836,19 +2833,6 @@ export function RetroOffice3D({
           : defaultRemoteLayoutFurniture,
     [defaultRemoteLayoutFurniture, remoteLayoutSnapshot, remoteOfficeEnabled],
   );
-  useEffect(() => {
-    setFurniture(
-      buildInitialFurnitureLayout(storageNamespace, layoutPreset).filter(
-        (item) => !isRetiredPingPongLamp(item),
-      ),
-    );
-    setSelectedUid(null);
-    setDeskActionUid(null);
-    setDeskAssignPickerOpen(false);
-    setDrag({ kind: "idle" });
-    setGhostPos(null);
-    setWallDrawStart(null);
-  }, [layoutPreset, storageNamespace]);
   const [editMode, setEditMode] = useState(false);
   const [selectedUid, setSelectedUid] = useState<string | null>(null);
   const [hoverUid, setHoverUid] = useState<string | null>(null);
@@ -2880,6 +2864,20 @@ export function RetroOffice3D({
   } | null>(null);
   const [deskActionUid, setDeskActionUid] = useState<string | null>(null);
   const [deskAssignPickerOpen, setDeskAssignPickerOpen] = useState(false);
+  // Sits below every state it resets so the setters exist when it runs.
+  useEffect(() => {
+    setFurniture(
+      buildInitialFurnitureLayout(storageNamespace, layoutPreset).filter(
+        (item) => !isRetiredPingPongLamp(item),
+      ),
+    );
+    setSelectedUid(null);
+    setDeskActionUid(null);
+    setDeskAssignPickerOpen(false);
+    setDrag({ kind: "idle" });
+    setGhostPos(null);
+    setWallDrawStart(null);
+  }, [layoutPreset, storageNamespace]);
   // New Idea 3: speech bubble agent IDs. Holds at most the one agent currently
   // granted the floor — see the speech-turn queue below.
   const [speechAgentIds, setSpeechAgentIds] = useState<Set<string>>(new Set());
@@ -2887,8 +2885,9 @@ export function RetroOffice3D({
   const speechSeenRepliesRef = useRef<Set<string>>(new Set());
   const speechTurnTimerRef = useRef<number | null>(null);
   // Hand the floor to the next waiting reply, and keep handing it on until the
-  // queue drains. Re-entrant by design: the timer calls straight back in.
-  const pumpSpeechTurns = useCallback(() => {
+  // queue drains. Re-entrant by design: the timer calls straight back in, so
+  // the function expression is named to give the recursion its own binding.
+  const pumpSpeechTurns = useCallback(function pump() {
     if (speechTurnTimerRef.current !== null) return;
     const next = speechQueueRef.current.shift();
     if (!next) {
@@ -2898,7 +2897,7 @@ export function RetroOffice3D({
     setSpeechAgentIds(new Set([next.agentId]));
     speechTurnTimerRef.current = window.setTimeout(() => {
       speechTurnTimerRef.current = null;
-      pumpSpeechTurns();
+      pump();
     }, next.durationMs);
   }, []);
   useEffect(
@@ -2927,34 +2926,29 @@ export function RetroOffice3D({
     return { speechTextByAgentId: texts, speechImageUrlByAgentId: images };
   }, [feedEvents]);
   // Live typing outranks a queued reply, but only one stream may hold the
-  // floor. Whoever started first keeps it until they stop, so the bubble does
-  // not hop between agents mid-sentence.
-  const streamingSinceRef = useRef<Map<string, number>>(new Map());
-  const streamingSpeakerId = useMemo(() => {
-    const since = streamingSinceRef.current;
-    const now = Date.now();
-    const streaming = new Set(
+  // floor. The current holder keeps it until they stop streaming, so the
+  // bubble does not hop between agents mid-sentence.
+  const streamingAgentIds = useMemo(
+    () =>
       Object.entries(streamingTextByAgentId)
         .filter(([, text]) => Boolean(text?.trim()))
-        .map(([agentId]) => agentId),
-    );
-    for (const agentId of streaming) {
-      if (!since.has(agentId)) since.set(agentId, now);
-    }
-    for (const agentId of [...since.keys()]) {
-      if (!streaming.has(agentId)) since.delete(agentId);
-    }
-    let speakerId: string | null = null;
-    let earliest = Number.POSITIVE_INFINITY;
-    for (const agentId of streaming) {
-      const startedAt = since.get(agentId) ?? now;
-      if (startedAt < earliest) {
-        earliest = startedAt;
-        speakerId = agentId;
-      }
-    }
-    return speakerId;
-  }, [streamingTextByAgentId]);
+        .map(([agentId]) => agentId)
+        .sort(),
+    [streamingTextByAgentId],
+  );
+  const [heldStreamingSpeakerId, setHeldStreamingSpeakerId] = useState<
+    string | null
+  >(null);
+  const streamingSpeakerId =
+    heldStreamingSpeakerId !== null &&
+    streamingAgentIds.includes(heldStreamingSpeakerId)
+      ? heldStreamingSpeakerId
+      : (streamingAgentIds[0] ?? null);
+  // Render-time adjustment, per the "storing information from previous
+  // renders" pattern; React re-renders immediately with the held value.
+  if (streamingSpeakerId !== heldStreamingSpeakerId) {
+    setHeldStreamingSpeakerId(streamingSpeakerId);
+  }
   const activeSpeechAgentId =
     streamingSpeakerId ?? [...speechAgentIds][0] ?? null;
   const standupSpeechTextByAgentId = useMemo(() => {

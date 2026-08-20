@@ -228,9 +228,15 @@ export async function hydrateAgentFleetFromGateway(params: {
           if (!recoveredName || isTemporarySkillAgentName(recoveredName)) {
             return agent;
           }
+          // The recovered identity becomes the display name, but a stable
+          // listed name is still the runtime's own name — keep it so
+          // `runtimeName` survives the recovery.
           return {
             ...agent,
-            name: recoveredName,
+            name:
+              !listedName || isTemporarySkillAgentName(listedName)
+                ? recoveredName
+                : agent.name,
             identity: {
               ...(agent.identity ?? {}),
               name: recoveredName,
