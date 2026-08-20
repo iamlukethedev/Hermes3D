@@ -13,7 +13,10 @@ import type {
   KnownConversationGroup,
 } from "../../src/features/retro-office/core/conversations";
 import { AGENT_RADIUS } from "../../src/features/retro-office/core/constants";
-import { planChatterBlip } from "../../src/features/retro-office/systems/conversationChatterAudio";
+import {
+  chatterUtteranceDurationMs,
+  planChatterUtterance,
+} from "../../src/features/retro-office/systems/conversationChatterAudio";
 import { formatAgentSubtitleText } from "../../src/features/retro-office/objects/agents";
 
 const NAMES = {
@@ -239,18 +242,63 @@ describe("conversationTalkTurn", () => {
   });
 });
 
-describe("planChatterBlip", () => {
-  it("stays within audible-but-quiet bounds", () => {
-    for (const roll of [0, 0.25, 0.5, 0.75, 0.999]) {
-      const plan = planChatterBlip(() => roll);
-      expect(plan.delayMs).toBeGreaterThanOrEqual(260);
-      expect(plan.delayMs).toBeLessThanOrEqual(900);
-      expect(plan.frequencyHz).toBeGreaterThanOrEqual(165);
-      expect(plan.frequencyHz).toBeLessThanOrEqual(355);
-      expect(plan.durationMs).toBeGreaterThanOrEqual(70);
-      expect(plan.durationMs).toBeLessThanOrEqual(160);
-      expect(plan.gain).toBeLessThanOrEqual(0.044);
-      expect([1, 2]).toContain(plan.syllables);
+describe("planChatterUtterance", () => {
+  const rolls = [0, 0.25, 0.5, 0.75, 0.999];
+
+  it("stays within audible-but-quiet bounds for both voices", () => {
+    for (const voice of ["low", "high"] as const) {
+      for (const roll of rolls) {
+        const plan = planChatterUtterance(voice, () => roll);
+        expect(plan.syllables.length).toBeGreaterThanOrEqual(2);
+        expect(plan.syllables.length).toBeLessThanOrEqual(5);
+        for (const syllable of plan.syllables) {
+          expect(syllable.frequencyHz).toBeGreaterThanOrEqual(90);
+          expect(syllable.frequencyHz).toBeLessThanOrEqual(400);
+          expect(syllable.durationMs).toBeGreaterThanOrEqual(60);
+          expect(syllable.durationMs).toBeLessThanOrEqual(120);
+          expect(syllable.gapMs).toBeGreaterThanOrEqual(0);
+          expect(syllable.gapMs).toBeLessThanOrEqual(90);
+        }
+        expect(plan.gain).toBeGreaterThan(0);
+        expect(plan.gain).toBeLessThanOrEqual(0.08);
+        expect(plan.pauseAfterMs).toBeGreaterThanOrEqual(380);
+        expect(plan.pauseAfterMs).toBeLessThanOrEqual(2_600);
+      }
+    }
+  });
+
+  it("keeps an utterance short enough to stay conversational", () => {
+    for (const roll of rolls) {
+      const plan = planChatterUtterance("low", () => roll);
+      expect(chatterUtteranceDurationMs(plan)).toBeLessThanOrEqual(1_000);
+    }
+  });
+
+  it("separates the two voice registers under identical randomness", () => {
+    for (const roll of rolls) {
+      const low = planChatterUtterance("low", () => roll);
+      const high = planChatterUtterance("high", () => roll);
+      expect(high.syllables[0].frequencyHz).toBeGreaterThan(
+        low.syllables[0].frequencyHz,
+      );
+    }
+  });
+
+  it("ends on a note away from the base so it reads as speech", () => {
+    // With a mid roll the last syllable falls below the wander band; with a
+    // low roll (questioning) it rises above it.
+    const statement = planChatterUtterance("low", () => 0.5);
+    const statementLast = statement.syllables[statement.syllables.length - 1];
+    const statementBody = statement.syllables.slice(0, -1);
+    for (const syllable of statementBody) {
+      expect(statementLast.frequencyHz).toBeLessThan(syllable.frequencyHz);
+    }
+
+    const question = planChatterUtterance("low", () => 0.1);
+    const questionLast = question.syllables[question.syllables.length - 1];
+    const questionBody = question.syllables.slice(0, -1);
+    for (const syllable of questionBody) {
+      expect(questionLast.frequencyHz).toBeGreaterThan(syllable.frequencyHz);
     }
   });
 });
