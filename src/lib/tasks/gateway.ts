@@ -57,6 +57,17 @@ const trimOrUndefined = (value: string | null | undefined) => {
   return trimmed || undefined;
 };
 
+/**
+ * Cards fed from a backend-managed board (hermes-agent's built-in kanban)
+ * carry this id prefix. Their mutations must round-trip through the gateway
+ * instead of the local shared store, or the next board refresh would fight a
+ * divergent local copy.
+ */
+export const KANBAN_TASK_ID_PREFIX = "kanban:";
+
+export const isKanbanManagedTaskId = (id: string): boolean =>
+  id.startsWith(KANBAN_TASK_ID_PREFIX);
+
 export const isUnsupportedTaskGatewayError = (error: unknown): boolean => {
   if (!(error instanceof GatewayResponseError)) return false;
   const code = error.code.trim().toUpperCase();

@@ -4260,6 +4260,11 @@ export function OfficeScreen({
     () => (taskManagerSkill ? deriveSkillReadinessState(taskManagerSkill) === "ready" : false),
     [taskManagerSkill],
   );
+  // Kanban is built into hermes-agent (`hermes kanban` + the dashboard board
+  // API the bridge proxies as tasks.list), so the desk must not demand the
+  // task-manager skill there — that skill is the legacy backend's task store.
+  const kanbanDeskEnabled =
+    taskManagerReady || activeAdapterType === "hermes-agent";
   const soundhermesReady = useMemo(
     () => (soundhermesSkill ? deriveSkillReadinessState(soundhermesSkill) === "ready" : false),
     [soundhermesSkill]
@@ -4476,7 +4481,7 @@ export function OfficeScreen({
           monitorAgentId={monitorAgentId}
           monitorByAgentId={monitorByAgentId}
           githubSkill={githubSkill}
-          taskManagerEnabled={taskManagerReady}
+          taskManagerEnabled={kanbanDeskEnabled}
           soundhermesEnabled={soundhermesReady}
           officeTitle={officeTitle}
           officeTitleLoaded={officeTitleLoaded}

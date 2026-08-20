@@ -199,6 +199,12 @@ HERMES3D_GATEWAY_TOKEN=<your-token>
 
 You should land in the office with one character per `hermes-agent` profile.
 
+The kanban desk works out of the box: it shows the backend's built-in
+`hermes kanban` board over the same connection and token — nothing to
+install. Moving a card writes the matching status back to Hermes (dragging
+toward **Working** queues the task as `ready`; the dispatcher is the only
+thing allowed to mark it `running`).
+
 ---
 
 ## Troubleshooting

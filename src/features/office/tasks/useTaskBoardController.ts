@@ -43,9 +43,12 @@ import {
 } from "@/lib/studio/settings";
 import type { StudioSettingsCoordinator } from "@/lib/studio/coordinator";
 import {
+  isKanbanManagedTaskId,
   isUnsupportedTaskGatewayError,
   listGatewayTasks,
+  updateGatewayTask,
   type GatewayTaskRecord,
+  type GatewayTaskUpdateInput,
 } from "@/lib/tasks/gateway";
 import {
   archiveSharedTaskRecord,
@@ -964,6 +967,19 @@ export const useTaskBoardController = ({
     void refreshRemoteTasks();
   }, [refreshRemoteTasks]);
 
+  // Backend-managed boards (hermes kanban) change from outside this client —
+  // workers claim tasks, the dispatcher completes them — so keep polling while
+  // the gateway actually serves tasks.
+  useEffect(() => {
+    if (gatewayTasksSupported !== "supported" || status !== "connected") return;
+    const intervalId = window.setInterval(() => {
+      void refreshRemoteTasks();
+    }, 12_000);
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [gatewayTasksSupported, refreshRemoteTasks, status]);
+
   useEffect(() => {
     if (!hydratedRef.current) return;
     const playbookCards = buildPlaybookCards(cronJobs, stateRef.current.cards);
@@ -1067,12 +1083,56 @@ export const useTaskBoardController = ({
     [applySharedTaskRecord],
   );
 
+  // Kanban cards live on the hermes backend; writing them to the shared file
+  // store would create a divergent local copy that the next board refresh
+  // fights. Round-trip the patch through the gateway and apply its truth.
+  const persistKanbanCardPatch = useCallback(
+    async (
+      cardId: string,
+      patch: GatewayTaskUpdateInput,
+      revertCard: TaskBoardCard,
+    ) => {
+      try {
+        const updated = await updateGatewayTask(client, cardId, patch);
+        applyGatewayTaskRecord(updated);
+      } catch (error) {
+        dispatch({ type: "upsert", card: revertCard });
+        setGatewayTasksError(
+          error instanceof Error
+            ? error.message
+            : "Failed to update the Hermes kanban task.",
+        );
+      }
+    },
+    [applyGatewayTaskRecord, client],
+  );
+
   const updateCard = useCallback(
     async (cardId: string, patch: Partial<TaskBoardCard>) => {
       const existing =
         stateRef.current.cards.find((card) => card.id === cardId) ?? null;
       dispatch({ type: "update", cardId, patch });
       if (!existing || existing.isInferred) return;
+      if (isKanbanManagedTaskId(cardId)) {
+        await persistKanbanCardPatch(
+          cardId,
+          {
+            ...(patch.title !== undefined ? { title: patch.title } : {}),
+            ...(patch.description !== undefined
+              ? { description: patch.description }
+              : {}),
+            ...(patch.status !== undefined ? { status: patch.status } : {}),
+            ...(patch.assignedAgentId !== undefined
+              ? { assignedAgentId: patch.assignedAgentId }
+              : {}),
+            ...(patch.isArchived !== undefined
+              ? { archived: patch.isArchived }
+              : {}),
+          },
+          existing,
+        );
+        return;
+      }
       try {
         const updated = await upsertSharedTaskRecord({
           ...existing,
@@ -1092,7 +1152,7 @@ export const useTaskBoardController = ({
         );
       }
     },
-    [applySharedTaskRecord],
+    [applySharedTaskRecord, persistKanbanCardPatch],
   );
 
   const moveCard = useCallback(
@@ -1101,6 +1161,10 @@ export const useTaskBoardController = ({
         stateRef.current.cards.find((card) => card.id === cardId) ?? null;
       dispatch({ type: "move", cardId, status: nextStatus });
       if (!existing || existing.isInferred) return;
+      if (isKanbanManagedTaskId(cardId)) {
+        await persistKanbanCardPatch(cardId, { status: nextStatus }, existing);
+        return;
+      }
       try {
         const updated = await upsertSharedTaskRecord({
           ...existing,
@@ -1120,7 +1184,7 @@ export const useTaskBoardController = ({
         );
       }
     },
-    [applySharedTaskRecord],
+    [applySharedTaskRecord, persistKanbanCardPatch],
   );
 
   const removeCard = useCallback(
@@ -1140,6 +1204,10 @@ export const useTaskBoardController = ({
         return;
       }
       dispatch({ type: "update", cardId, patch: { isArchived: true } });
+      if (isKanbanManagedTaskId(cardId)) {
+        await persistKanbanCardPatch(cardId, { archived: true }, existing);
+        return;
+      }
       try {
         const archived = await archiveSharedTaskRecord(cardId);
         applySharedTaskRecord(archived);
@@ -1152,7 +1220,7 @@ export const useTaskBoardController = ({
         );
       }
     },
-    [applySharedTaskRecord],
+    [applySharedTaskRecord, persistKanbanCardPatch],
   );
 
   const lastDedupeSnapshotRef = useRef<string | null>(null);

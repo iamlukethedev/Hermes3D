@@ -958,6 +958,7 @@ export const useGatewayConnection = (
       const nextDetectedAdapterType =
         hello?.adapterType === "demo" ||
         hello?.adapterType === "hermes" ||
+        hello?.adapterType === "hermes-agent" ||
         hello?.adapterType === "custom"
           ? hello.adapterType
           : "hermes";

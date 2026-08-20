@@ -19,6 +19,13 @@ const { randomUUID } = require("node:crypto");
 
 const { HermesAgentJsonRpcClient, redactUrl } = require("./jsonrpc-client");
 const { createOfficeSpeechSubscriber } = require("./office-speech");
+const {
+  KANBAN_TASK_ID_PREFIX,
+  toHermes3dKanbanTaskRecord,
+  toHermes3dKanbanTasks,
+  toKanbanPatchBody,
+  kanbanRequest,
+} = require("./kanban");
 
 /** Mirrors the numeric WebSocket readyState constants the proxy compares against. */
 const CONNECTING = 0;
@@ -524,7 +531,10 @@ function createHermesAgentUpstream(options) {
     return resOk(id, {
       type: "hello-ok",
       protocol: 3,
-      adapterType: "hermes",
+      // The client trusts this over the configured type once connected, so
+      // report what the backend actually is — hermes-agent capabilities
+      // (native kanban, profile fleet) hang off this detection.
+      adapterType: "hermes-agent",
       features: {
         methods: [
           "agents.list",
@@ -549,6 +559,7 @@ function createHermesAgentUpstream(options) {
           "skills.status",
           "models.list",
           "tasks.list",
+          "tasks.update",
           "cron.list",
         ],
         events: ["chat", "agent", "presence", "heartbeat", "cron"],
@@ -867,8 +878,60 @@ function createHermesAgentUpstream(options) {
         return resOk(id, { ok: true });
       }
 
-      case "tasks.list":
-        return resOk(id, { tasks: [] });
+      // Kanban is built into hermes-agent — the board rides the same origin
+      // and session token as the JSON-RPC gateway, so the office task board
+      // reflects the real `hermes kanban` board with nothing to install.
+      case "tasks.list": {
+        try {
+          const includeArchived = p.includeArchived === false ? "false" : "true";
+          const board = await kanbanRequest({
+            wsUrl: url,
+            token,
+            useLoopbackHost: client.usedLoopbackHost,
+            method: "GET",
+            path: `/board?include_archived=${includeArchived}`,
+          });
+          return resOk(id, { tasks: toHermes3dKanbanTasks(board) });
+        } catch (err) {
+          // A hidden/disabled kanban plugin or older backend is not an error
+          // state for the office — the board just has no hermes tasks.
+          log(`[hermes-agent] kanban board unavailable: ${errorMessage(err)}`);
+          return resOk(id, { tasks: [] });
+        }
+      }
+
+      case "tasks.update": {
+        const rawId = asString(p.id);
+        if (!rawId.startsWith(KANBAN_TASK_ID_PREFIX)) {
+          return resErr(
+            id,
+            "hermes_agent.tasks_update_unsupported",
+            "Only Hermes kanban tasks can be updated on this backend.",
+          );
+        }
+        const taskId = rawId.slice(KANBAN_TASK_ID_PREFIX.length);
+        try {
+          const result = await kanbanRequest({
+            wsUrl: url,
+            token,
+            useLoopbackHost: client.usedLoopbackHost,
+            method: "PATCH",
+            path: `/tasks/${encodeURIComponent(taskId)}`,
+            body: toKanbanPatchBody(p),
+          });
+          const record = toHermes3dKanbanTaskRecord(result?.task);
+          if (!record) {
+            return resErr(
+              id,
+              "hermes_agent.tasks_update_failed",
+              "hermes-agent did not return the updated task.",
+            );
+          }
+          return resOk(id, record);
+        } catch (err) {
+          return resErr(id, "hermes_agent.tasks_update_failed", errorMessage(err));
+        }
+      }
 
       default:
         log(`[hermes-agent] unhandled method: ${method}`);
