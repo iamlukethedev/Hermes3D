@@ -89,3 +89,7 @@ test-results
 
 # Agent/QA review screenshots (never commit).
 screenshots-*/
+
+# Bytecode from the bundled Python plugin.
+__pycache__/
+*.pyc

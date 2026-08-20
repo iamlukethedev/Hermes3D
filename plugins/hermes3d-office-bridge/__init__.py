@@ -20,6 +20,7 @@ swallows its own failures.
 
 from __future__ import annotations
 
+import atexit
 import logging
 import time
 from typing import Any, Optional
@@ -82,6 +83,34 @@ def build_publish_url(*, host: str, port: int, channel: str, token: str) -> str:
     )
 
 
+def _default_home_token() -> str:
+    """Read the token out of the default home's ``.env``.
+
+    Profiles each get their own ``HERMES_HOME`` and their own ``.env``, so a
+    profile-scoped process never sees a token pinned in the default home. That
+    matters here because this token is not profile-level config: it identifies
+    the one local dashboard every profile on the machine publishes to. Asking
+    users to copy the same secret into five ``.env`` files would be worse.
+    """
+    from pathlib import Path
+
+    try:
+        from hermes_constants import get_default_hermes_root
+
+        root = Path(get_default_hermes_root())
+    except Exception:
+        root = Path.home() / ".hermes"
+
+    try:
+        for line in (root / ".env").read_text(encoding="utf-8").splitlines():
+            key, sep, value = line.partition("=")
+            if sep and key.strip() == "HERMES_DASHBOARD_SESSION_TOKEN":
+                return value.strip().strip("'\"")
+    except OSError:
+        pass
+    return ""
+
+
 def _resolve_token() -> str:
     """The dashboard session token, which is a secret and so lives in the env.
 
@@ -90,7 +119,9 @@ def _resolve_token() -> str:
     """
     import os
 
-    return (os.environ.get("HERMES_DASHBOARD_SESSION_TOKEN") or "").strip()
+    return (
+        os.environ.get("HERMES_DASHBOARD_SESSION_TOKEN") or ""
+    ).strip() or _default_home_token()
 
 
 def _resolve_profile() -> str:
@@ -154,4 +185,8 @@ def register(ctx: Any) -> None:
             token=token,
         )
     )
+    # A one-shot CLI turn ends its process the moment the hook returns, well
+    # before a background send completes. Give the queue a bounded chance to
+    # drain so those turns reach the office too, not just long-lived backends.
+    atexit.register(_publisher.flush)
     ctx.register_hook("post_llm_call", _handle_post_llm_call)

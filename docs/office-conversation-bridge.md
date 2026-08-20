@@ -28,6 +28,11 @@ silently does nothing.
 echo "HERMES_DASHBOARD_SESSION_TOKEN=$(openssl rand -hex 32)" >> ~/.hermes/.env
 ```
 
+  `~/.hermes/.env` is the only place you need it, even if you run profiles.
+  Profiles each have their own `.env`, but this token identifies the one local
+  dashboard they all publish to, so the plugin falls back to the default home
+  rather than making you copy the same secret into every profile.
+
 ## Install
 
 Run the installer from your Hermes3D checkout, on the machine that runs the
@@ -37,12 +42,23 @@ backend:
 ./plugins/hermes3d-office-bridge/install.sh
 ```
 
-Then restart the backend (`hermes serve …`) so the plugin loads.
+Then restart anything already running an agent so the plugin loads — the
+backend (`hermes serve …`) and, if it is open, the desktop app. A process that
+started before the install keeps the old plugin state until it restarts.
 
 Plugins are scoped to a `HERMES_HOME`, and every Hermes profile has its own, so
 a plugin installed only in the default home stays silent for every other agent.
 The installer copies the plugin into the default home **and each profile**, and
 enables it in all of them. Re-running it is safe.
+
+Check it landed:
+
+```bash
+hermes plugins list | grep hermes3d          # default home
+hermes -p <profile> plugins list | grep hermes3d
+```
+
+Both should report `enabled`.
 
 To remove it:
 
@@ -138,5 +154,6 @@ only if something else is already using `hermes3d` on your event bus.
 | Nothing happens when you chat | Plugin not loaded | Restart the backend after installing; check `hermes plugins list` |
 | Works for one agent, not the others | Installed in the default home only | Re-run `install.sh`, which covers every profile |
 | Warning about the session token at install | Token not pinned | Add `HERMES_DASHBOARD_SESSION_TOKEN` to `~/.hermes/.env` and restart |
+| Still silent with everything enabled | A stale `HERMES_DASHBOARD_SESSION_TOKEN` exported in the shell that started the backend overrides the pinned one | `unset` it, or start the backend from a clean shell |
 | One agent replies but no circle forms | A conversation needs two speakers | Ask a question the whole group answers |
 | Agents gather but the office is silent | Browser audio is locked until you interact | Click once anywhere on the page |
