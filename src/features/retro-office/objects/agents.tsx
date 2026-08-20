@@ -88,6 +88,7 @@ export const AgentModel = memo(function AgentModel({
   showSpeech = false,
   speechText = null,
   suppressSpeechBubble = false,
+  huddleSeatIndex = null,
 }: AgentModelProps) {
   const groupRef = useRef<THREE.Group>(null);
   const leftArmRef = useRef<THREE.Group>(null);
@@ -509,13 +510,15 @@ export const AgentModel = memo(function AgentModel({
         agent.state === "standing" &&
         (agent.frame + blinkSeed * 11) % 320 < 42);
     const bumpTalking = (agent.bumpTalkUntil ?? 0) > Date.now();
-    // Standing in a huddle, everyone holds the same reply, and the bubbles are
-    // close enough to overlap into an unreadable stack. The speaking turn
-    // already rotates around the circle, so let it own the bubble too.
+    // In a huddle the bubbles are close enough to overlap into an unreadable
+    // stack, so the rotating talk pulse owns the ambient "..." bubble. The
+    // scene grants one real speaking turn at a time, and that speaker is never
+    // competing with another bubble — it always shows.
     const waitingForTurnInHuddle =
       agent.conversationGroupId !== undefined &&
       agent.state === "standing" &&
-      !bumpTalking;
+      !bumpTalking &&
+      !showSpeech;
 
     if (speechBubbleRef.current) {
       const bubbleVisible =
@@ -707,8 +710,16 @@ export const AgentModel = memo(function AgentModel({
     : "transparent";
   const speechBubbleBorderInset = activeSpeechBubble ? 0.03 : 0;
   const nameplateText = name ? formatAgentNameplateText(name) : "";
+  // A huddle packs four plates into roughly one plate's worth of screen space.
+  // Drop the role line there and step each seat's plate to its own height so
+  // the names read as a list instead of a pile.
+  const inHuddle = huddleSeatIndex !== null;
   const subtitleText =
-    typeof subtitle === "string" ? formatAgentSubtitleText(subtitle) : "";
+    !inHuddle && typeof subtitle === "string"
+      ? formatAgentSubtitleText(subtitle)
+      : "";
+  const nameplateHeight =
+    1.05 + (inHuddle ? ((huddleSeatIndex ?? 0) % 4) * 0.17 : 0);
   const nameplateFontSize =
     nameplateText.length > 9 ? 0.118 : nameplateText.length > 7 ? 0.13 : 0.144;
 
@@ -1156,7 +1167,7 @@ export const AgentModel = memo(function AgentModel({
         />
       </mesh>
       {!activeSpeechBubble && nameplateText ? (
-        <Billboard position={[0, 1.05, 0]}>
+        <Billboard position={[0, nameplateHeight, 0]}>
           <mesh position={[0, 0, -0.001]}>
             <planeGeometry args={[0.82, subtitleText ? 0.34 : 0.24]} />
             <meshBasicMaterial color="#080c14" transparent opacity={0.9} />

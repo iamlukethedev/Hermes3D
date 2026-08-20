@@ -43,4 +43,6 @@ export type AgentModelProps = {
   showSpeech?: boolean;
   speechText?: string | null;
   suppressSpeechBubble?: boolean;
+  /** Seat on the conversation circle, or null when not in a huddle. */
+  huddleSeatIndex?: number | null;
 };

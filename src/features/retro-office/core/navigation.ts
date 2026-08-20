@@ -1,4 +1,8 @@
-import { CANVAS_H, CANVAS_W } from "@/features/retro-office/core/constants";
+import {
+  AGENT_RADIUS,
+  CANVAS_H,
+  CANVAS_W,
+} from "@/features/retro-office/core/constants";
 import {
   getItemBounds,
   ITEM_FOOTPRINT,
@@ -123,6 +127,41 @@ export const isNavPointFree = (grid: NavGrid, x: number, y: number): boolean => 
     return false;
   }
   return grid[row * GRID_COLS + column] === 0;
+};
+
+/**
+ * True when a body of `radius` centred on (x, y) clears every blocked cell.
+ *
+ * A cell is 25 units and an agent is 40 across, so a point-only check reports
+ * "free" for a spot where the agent's body still sinks into the desk in the
+ * neighbouring cell. Use this for anywhere an agent comes to a stop and stays
+ * visible — walking through a pinch point can tolerate the looser test, but a
+ * character standing half inside a desk cannot.
+ */
+export const isNavAreaFree = (
+  grid: NavGrid,
+  x: number,
+  y: number,
+  radius: number = AGENT_RADIUS,
+): boolean => {
+  const firstColumn = Math.floor((x - radius) / GRID_CELL);
+  const lastColumn = Math.floor((x + radius) / GRID_CELL);
+  const firstRow = Math.floor((y - radius) / GRID_CELL);
+  const lastRow = Math.floor((y + radius) / GRID_CELL);
+  if (
+    firstColumn < 0 ||
+    firstRow < 0 ||
+    lastColumn >= GRID_COLS ||
+    lastRow >= GRID_ROWS
+  ) {
+    return false;
+  }
+  for (let row = firstRow; row <= lastRow; row += 1) {
+    for (let column = firstColumn; column <= lastColumn; column += 1) {
+      if (grid[row * GRID_COLS + column] !== 0) return false;
+    }
+  }
+  return true;
 };
 
 export function astar(

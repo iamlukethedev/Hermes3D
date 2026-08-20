@@ -12,6 +12,7 @@ import type {
   ConversationGroup,
   KnownConversationGroup,
 } from "../../src/features/retro-office/core/conversations";
+import { AGENT_RADIUS } from "../../src/features/retro-office/core/constants";
 import { planChatterBlip } from "../../src/features/retro-office/systems/conversationChatterAudio";
 import { formatAgentSubtitleText } from "../../src/features/retro-office/objects/agents";
 
@@ -169,11 +170,53 @@ describe("computeConversationSlots", () => {
     }
   });
 
+  it("rotates a pair into a corridor that no translation of the circle fits", () => {
+    // A horizontal aisle: only a narrow band of y is walkable. A pair defaults
+    // to a vertical line, so every candidate centre puts one slot in the wall
+    // until the circle is allowed to spin flat into the aisle.
+    // Narrower than the circle's diameter, so no vertical placement fits.
+    const aisle = (_x: number, y: number) => y > 290 && y < 330;
+    const slots = computeConversationSlots({
+      participants: [
+        { id: "allan", x: 300, y: 310 },
+        { id: "owen", x: 360, y: 310 },
+      ],
+      isFree: aisle,
+    });
+    expect(slots.size).toBe(2);
+    for (const slot of slots.values()) {
+      expect(aisle(slot.x, slot.y)).toBe(true);
+    }
+  });
+
   it("returns nothing for fewer than two participants", () => {
     expect(
       computeConversationSlots({ participants: [{ id: "a", x: 0, y: 0 }] })
         .size,
     ).toBe(0);
+  });
+
+  it("keeps neighbours at least a body apart at every group size", () => {
+    // A fixed radius seated four agents 37 units apart — inside each other,
+    // since a body is 40 across. The circle has to grow with the group.
+    for (let count = 2; count <= 8; count += 1) {
+      const participants = Array.from({ length: count }, (_, index) => ({
+        id: `agent-${index}`,
+        x: 600 + index * 30,
+        y: 600,
+      }));
+      const points = [...computeConversationSlots({ participants }).values()];
+      expect(points).toHaveLength(count);
+      for (let i = 0; i < points.length; i += 1) {
+        for (let j = i + 1; j < points.length; j += 1) {
+          const gap = Math.hypot(
+            points[i].x - points[j].x,
+            points[i].y - points[j].y,
+          );
+          expect(gap).toBeGreaterThanOrEqual(AGENT_RADIUS * 2);
+        }
+      }
+    }
   });
 });
 

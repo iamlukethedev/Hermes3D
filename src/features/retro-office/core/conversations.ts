@@ -1,4 +1,8 @@
-import { CANVAS_H, CANVAS_W } from "@/features/retro-office/core/constants";
+import {
+  AGENT_RADIUS,
+  CANVAS_H,
+  CANVAS_W,
+} from "@/features/retro-office/core/constants";
 
 /**
  * Agent-to-agent conversation detection and huddle placement.
@@ -51,11 +55,30 @@ export const CONVERSATION_EN_ROUTE_GRACE_MS = 12_000;
 /** Hard ceiling on a huddle's life from formation, extensions included. */
 export const CONVERSATION_MAX_LIFETIME_MS = 150_000;
 
-/** Arc distance between neighbours on the circle, in canvas units. */
-export const CONVERSATION_SLOT_SPACING = 34;
+/**
+ * Centre-to-centre gap between neighbours on the circle, in canvas units.
+ *
+ * Derived from the body size rather than picked by eye: anything below
+ * `AGENT_RADIUS * 2` puts two agents inside each other. The extra margin is
+ * breathing room so a circle reads as a group of people rather than a huddle of
+ * touching boxes.
+ */
+export const CONVERSATION_SLOT_SPACING = AGENT_RADIUS * 2 + 8;
 
 /** Minimum huddle radius so two agents don't stand nose-to-nose. */
 export const CONVERSATION_MIN_RADIUS = 26;
+
+/**
+ * Radius that seats `count` agents without overlapping.
+ *
+ * Neighbours sit on a chord of `2r·sin(π/n)`, so the radius has to grow with
+ * the group; a fixed radius silently overlapped every huddle of four or more.
+ */
+export const conversationRadius = (count: number): number =>
+  Math.max(
+    CONVERSATION_MIN_RADIUS,
+    CONVERSATION_SLOT_SPACING / (2 * Math.sin(Math.PI / Math.max(2, count))),
+  );
 
 /** How long one agent "speaks" before the turn passes around the circle. */
 export const CONVERSATION_TALK_TURN_MS = 1_600;
@@ -311,41 +334,51 @@ export const computeConversationSlots = (options: {
     margin,
     canvasHeight - margin,
   );
-  const radius = Math.max(
-    CONVERSATION_MIN_RADIUS,
-    (CONVERSATION_SLOT_SPACING * count) / (2 * Math.PI),
-  );
+  const radius = conversationRadius(count);
 
-  const slotPointsAt = (cx: number, cy: number) =>
+  const slotPointsAt = (cx: number, cy: number, phase: number) =>
     Array.from({ length: count }, (_, index) => {
-      const angle = -Math.PI / 2 + (index * 2 * Math.PI) / count;
+      const angle = -Math.PI / 2 + phase + (index * 2 * Math.PI) / count;
       return {
         x: cx + radius * Math.cos(angle),
         y: cy + radius * Math.sin(angle),
       };
     });
 
+  // Rotating by a full seat spacing maps the circle onto itself, so the useful
+  // phases live inside one seat. Spinning matters most for a pair, where the
+  // circle is a line segment that translation alone cannot fit between desks.
+  const seatArc = (2 * Math.PI) / count;
+  const phases = [0, seatArc / 3, (2 * seatArc) / 3];
+
   // Prefer the first fully free candidate; otherwise take the one with the
   // most walkable slots so a crowded floor still yields a usable circle.
   let centerX = centroidX;
   let centerY = centroidY;
+  let centerPhase = 0;
   let bestFreeCount = -1;
-  for (const [offsetX, offsetY] of CENTER_CANDIDATE_OFFSETS) {
+  search: for (const [offsetX, offsetY] of CENTER_CANDIDATE_OFFSETS) {
     const cx = clamp(centroidX + offsetX, margin, canvasWidth - margin);
     const cy = clamp(centroidY + offsetY, margin, canvasHeight - margin);
-    const points = slotPointsAt(cx, cy);
-    const freeCount =
-      (isFree(cx, cy) ? 1 : 0) +
-      points.reduce((sum, point) => sum + (isFree(point.x, point.y) ? 1 : 0), 0);
-    if (freeCount > bestFreeCount) {
-      bestFreeCount = freeCount;
-      centerX = cx;
-      centerY = cy;
+    const centerFree = isFree(cx, cy) ? 1 : 0;
+    for (const phase of phases) {
+      const freeCount =
+        centerFree +
+        slotPointsAt(cx, cy, phase).reduce(
+          (sum, point) => sum + (isFree(point.x, point.y) ? 1 : 0),
+          0,
+        );
+      if (freeCount > bestFreeCount) {
+        bestFreeCount = freeCount;
+        centerX = cx;
+        centerY = cy;
+        centerPhase = phase;
+      }
+      if (freeCount === count + 1) break search;
     }
-    if (freeCount === count + 1) break;
   }
 
-  const points = slotPointsAt(centerX, centerY);
+  const points = slotPointsAt(centerX, centerY, centerPhase);
   // Hand out slots in bearing order so nobody walks through the circle.
   const ordered = [...participants].sort((a, b) => {
     const bearingA = Math.atan2(a.y - centerY, a.x - centerX);

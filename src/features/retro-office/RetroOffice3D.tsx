@@ -127,7 +127,7 @@ import {
   getMeetingSeatLocations,
   getQaLabStations,
   GYM_DEFAULT_TARGET,
-  isNavPointFree,
+  isNavAreaFree,
   MEETING_OVERFLOW_LOCATIONS,
   QA_LAB_DEFAULT_TARGET,
   resolveDeskIndexForItem,
@@ -153,6 +153,11 @@ import {
   type ConversationGroup,
   type ConversationSpeechSample,
 } from "@/features/retro-office/core/conversations";
+import {
+  enqueueSpeechTurns,
+  speechTurnDurationMs,
+  type SpeechTurn,
+} from "@/features/retro-office/core/speechTurns";
 import { ConversationChatterAudio } from "@/features/retro-office/systems/conversationChatterAudio";
 import {
   loadFurniture,
@@ -259,7 +264,7 @@ import type { OfficeCleaningCue } from "@/lib/office/janitorReset";
 type OfficeDeskMonitorMap = Record<string, OfficeDeskMonitor>;
 type RenderAgentUiSnapshot = Pick<
   RenderAgent,
-  "state" | "status" | "conversationGroupId"
+  "state" | "status" | "conversationGroupId" | "conversationSeatIndex"
 >;
 type FeedEvent = {
   id: string;
@@ -1037,7 +1042,10 @@ function useAgentTick(
         const grid = getNavGrid();
         const slots = computeConversationSlots({
           participants,
-          isFree: (x, y) => isNavPointFree(grid, x, y),
+          // Members stand here for the life of the huddle, so the whole body
+          // has to clear the furniture — a point-only check seated them with
+          // half a torso inside a desk.
+          isFree: (x, y) => isNavAreaFree(grid, x, y),
         });
         for (const [agentId, slot] of slots) {
           conversationSlotByAgentIdRef.current.set(agentId, {
@@ -2872,8 +2880,36 @@ export function RetroOffice3D({
   } | null>(null);
   const [deskActionUid, setDeskActionUid] = useState<string | null>(null);
   const [deskAssignPickerOpen, setDeskAssignPickerOpen] = useState(false);
-  // New Idea 3: speech bubble agent IDs.
+  // New Idea 3: speech bubble agent IDs. Holds at most the one agent currently
+  // granted the floor — see the speech-turn queue below.
   const [speechAgentIds, setSpeechAgentIds] = useState<Set<string>>(new Set());
+  const speechQueueRef = useRef<SpeechTurn[]>([]);
+  const speechSeenRepliesRef = useRef<Set<string>>(new Set());
+  const speechTurnTimerRef = useRef<number | null>(null);
+  // Hand the floor to the next waiting reply, and keep handing it on until the
+  // queue drains. Re-entrant by design: the timer calls straight back in.
+  const pumpSpeechTurns = useCallback(() => {
+    if (speechTurnTimerRef.current !== null) return;
+    const next = speechQueueRef.current.shift();
+    if (!next) {
+      setSpeechAgentIds((previous) => (previous.size === 0 ? previous : new Set()));
+      return;
+    }
+    setSpeechAgentIds(new Set([next.agentId]));
+    speechTurnTimerRef.current = window.setTimeout(() => {
+      speechTurnTimerRef.current = null;
+      pumpSpeechTurns();
+    }, next.durationMs);
+  }, []);
+  useEffect(
+    () => () => {
+      if (speechTurnTimerRef.current !== null) {
+        window.clearTimeout(speechTurnTimerRef.current);
+        speechTurnTimerRef.current = null;
+      }
+    },
+    [],
+  );
   const statusFeedEvents = useMemo(
     () => feedEvents.filter((event) => event.kind !== "reply"),
     [feedEvents],
@@ -2890,6 +2926,37 @@ export function RetroOffice3D({
     }
     return { speechTextByAgentId: texts, speechImageUrlByAgentId: images };
   }, [feedEvents]);
+  // Live typing outranks a queued reply, but only one stream may hold the
+  // floor. Whoever started first keeps it until they stop, so the bubble does
+  // not hop between agents mid-sentence.
+  const streamingSinceRef = useRef<Map<string, number>>(new Map());
+  const streamingSpeakerId = useMemo(() => {
+    const since = streamingSinceRef.current;
+    const now = Date.now();
+    const streaming = new Set(
+      Object.entries(streamingTextByAgentId)
+        .filter(([, text]) => Boolean(text?.trim()))
+        .map(([agentId]) => agentId),
+    );
+    for (const agentId of streaming) {
+      if (!since.has(agentId)) since.set(agentId, now);
+    }
+    for (const agentId of [...since.keys()]) {
+      if (!streaming.has(agentId)) since.delete(agentId);
+    }
+    let speakerId: string | null = null;
+    let earliest = Number.POSITIVE_INFINITY;
+    for (const agentId of streaming) {
+      const startedAt = since.get(agentId) ?? now;
+      if (startedAt < earliest) {
+        earliest = startedAt;
+        speakerId = agentId;
+      }
+    }
+    return speakerId;
+  }, [streamingTextByAgentId]);
+  const activeSpeechAgentId =
+    streamingSpeakerId ?? [...speechAgentIds][0] ?? null;
   const standupSpeechTextByAgentId = useMemo(() => {
     if (!standupMeeting || standupMeeting.phase !== "in_progress") return {};
     const currentCard =
@@ -3339,6 +3406,7 @@ export function RetroOffice3D({
           state: agent.state,
           status: agent.status,
           conversationGroupId: agent.conversationGroupId,
+          conversationSeatIndex: agent.conversationSeatIndex,
         };
       }
       // Keep the previous object when nothing changed so idle frames do not
@@ -3354,7 +3422,8 @@ export function RetroOffice3D({
               !after ||
               before.state !== after.state ||
               before.status !== after.status ||
-              before.conversationGroupId !== after.conversationGroupId
+              before.conversationGroupId !== after.conversationGroupId ||
+              before.conversationSeatIndex !== after.conversationSeatIndex
             ) {
               identical = false;
               break;
@@ -5576,31 +5645,38 @@ export function RetroOffice3D({
     return () => window.removeEventListener("pointerdown", dismiss);
   }, [deskActionUid]);
 
-  // New Idea 3: show speech bubble based on reply length.
+  // Replies take the floor one at a time. A group message answered by four
+  // agents arrives as four replies in the same second, and showing them at once
+  // stacks four full-size bubbles into an unreadable pile.
   useEffect(() => {
-    if (feedEvents.length === 0) return;
-    const latest = feedEvents[0];
-    if (!latest) return;
-    if (latest.kind !== "reply") return;
-    const speechBubbleDurationMs = Math.min(
-      12_000,
-      Math.max(5_500, 2_500 + latest.text.trim().length * 42),
-    );
-    const addTimer = window.setTimeout(() => {
-      setSpeechAgentIds((prev) => new Set([...prev, latest.id]));
-    }, 0);
-    const timer = window.setTimeout(() => {
-      setSpeechAgentIds((prev) => {
-        const next = new Set(prev);
-        next.delete(latest.id);
-        return next;
+    const seen = speechSeenRepliesRef.current;
+    const arrivals: SpeechTurn[] = [];
+    // Oldest first: the queue is a waiting line, and feedEvents is newest-first.
+    for (const event of [...feedEvents].reverse()) {
+      if (event.kind !== "reply") continue;
+      const text = event.text.trim();
+      if (!text) continue;
+      const key = `${event.id}:${event.ts}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      arrivals.push({
+        agentId: event.id,
+        key,
+        durationMs: speechTurnDurationMs(text.length),
       });
-    }, speechBubbleDurationMs);
-    return () => {
-      window.clearTimeout(addTimer);
-      window.clearTimeout(timer);
-    };
-  }, [feedEvents]);
+    }
+    if (seen.size > 64) {
+      speechSeenRepliesRef.current = new Set(
+        feedEvents.map((event) => `${event.id}:${event.ts}`),
+      );
+    }
+    if (arrivals.length === 0) return;
+    speechQueueRef.current = enqueueSpeechTurns(
+      speechQueueRef.current,
+      arrivals,
+    );
+    pumpSpeechTurns();
+  }, [feedEvents, pumpSpeechTurns]);
 
   // E3 Idea 1: emoji mood reactions on feed events.
   useEffect(() => {
@@ -6252,8 +6328,7 @@ export function RetroOffice3D({
                       ? false
                       : standupMeeting?.phase === "in_progress"
                         ? Boolean(standupSpeechTextByAgentId[agent.id])
-                        : speechAgentIds.has(agent.id) ||
-                          Boolean(streamingTextByAgentId[agent.id])
+                        : agent.id === activeSpeechAgentId
                   }
                   speechText={
                     isJanitor
@@ -6267,6 +6342,11 @@ export function RetroOffice3D({
                   suppressSpeechBubble={
                     suppressSceneSpeechBubbles &&
                     standupMeeting?.currentSpeakerAgentId !== agent.id
+                  }
+                  huddleSeatIndex={
+                    renderAgentUiById[agent.id]?.conversationGroupId
+                      ? (renderAgentUiById[agent.id]?.conversationSeatIndex ?? 0)
+                      : null
                   }
                 />
               );
