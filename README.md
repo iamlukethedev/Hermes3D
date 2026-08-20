@@ -97,6 +97,7 @@ Prerequisite:
 - For a no-framework local office demo, run the bundled demo gateway instead.
 - If you need a full cross-machine setup guide (Hermes + Tailscale + Hermes3D), follow [`TUTORIAL.md`](TUTORIAL.md).
 - To connect to a remote `hermes-agent` backend with no adapter process, follow [`docs/hermes-agent-tailscale.md`](docs/hermes-agent-tailscale.md).
+- To make the office react to chats you have elsewhere (desktop app, TUI, CLI), install the optional bridge plugin in [`docs/office-conversation-bridge.md`](docs/office-conversation-bridge.md).
 
 Run from source:
 
@@ -284,6 +285,7 @@ See [`.env.example`](.env.example) for the full local development template.
 - [`ARCHITECTURE.md`](ARCHITECTURE.md): system boundaries, data flow, and major trade-offs.
 - [`TUTORIAL.md`](TUTORIAL.md): detailed step-by-step setup for Hermes + Tailscale + Hermes3D.
 - [`docs/hermes-agent-tailscale.md`](docs/hermes-agent-tailscale.md): connect to a remote `hermes-agent` over Tailscale with no adapter process.
+- [`docs/office-conversation-bridge.md`](docs/office-conversation-bridge.md): optional plugin that makes the office react to chats you have in the desktop app, TUI, or CLI.
 - [`docs/multi-agent-beta.md`](docs/multi-agent-beta.md): remote office beta setup, connection modes, and limitations.
 - [`docs/runtime-profiles.md`](docs/runtime-profiles.md): saved backend/runtime profiles and the current HTTP runtime seam.
 - [`CODE_DOCUMENTATION.md`](CODE_DOCUMENTATION.md): practical code map, extension points, and contributor onboarding order.

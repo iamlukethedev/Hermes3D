@@ -509,10 +509,18 @@ export const AgentModel = memo(function AgentModel({
         agent.state === "standing" &&
         (agent.frame + blinkSeed * 11) % 320 < 42);
     const bumpTalking = (agent.bumpTalkUntil ?? 0) > Date.now();
+    // Standing in a huddle, everyone holds the same reply, and the bubbles are
+    // close enough to overlap into an unreadable stack. The speaking turn
+    // already rotates around the circle, so let it own the bubble too.
+    const waitingForTurnInHuddle =
+      agent.conversationGroupId !== undefined &&
+      agent.state === "standing" &&
+      !bumpTalking;
 
     if (speechBubbleRef.current) {
       const bubbleVisible =
         !suppressSpeechBubble &&
+        !waitingForTurnInHuddle &&
         (showSpeech || bumpTalking || ambientBubbleVisible);
       speechBubbleRef.current.visible = bubbleVisible;
       if (bubbleVisible) {

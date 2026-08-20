@@ -181,6 +181,67 @@ export const deriveConversationGroups = (options: {
     .sort((a, b) => a.id.localeCompare(b.id));
 };
 
+export interface KnownConversationGroup {
+  group: ConversationGroup;
+  formedAtMs: number;
+}
+
+/**
+ * Fold freshly derived groups into the huddles already on the floor.
+ *
+ * Membership churns as speech samples age in and out of the window, and the
+ * naive "add whatever was derived" rule let two huddles claim the same agent —
+ * which hands that agent two circles and leaves it walking between them
+ * forever. Three cases, in order:
+ *
+ * - Same membership: the huddle continues, keep its formation time and slots.
+ * - Subset of a live huddle: a speaker's sample simply aged out. Still the same
+ *   conversation, so it counts as activity rather than re-seating the circle.
+ * - Anything else: the derived group is the fresher truth and retires every
+ *   huddle it overlaps, so no agent is ever in two groups.
+ */
+export const reconcileConversationGroups = (options: {
+  derived: ConversationGroup[];
+  known: Map<string, KnownConversationGroup>;
+  nowMs: number;
+}): Map<string, KnownConversationGroup> => {
+  const { derived, known, nowMs } = options;
+  for (const group of derived) {
+    const entry = known.get(group.id);
+    if (entry) {
+      entry.group = group;
+      continue;
+    }
+    const containing = [...known.values()].find((other) =>
+      group.participantIds.every((id) =>
+        other.group.participantIds.includes(id),
+      ),
+    );
+    if (containing) {
+      containing.group = {
+        ...containing.group,
+        lastActivityMs: Math.max(
+          containing.group.lastActivityMs,
+          group.lastActivityMs,
+        ),
+      };
+      continue;
+    }
+    for (const [otherId, other] of known) {
+      if (
+        otherId !== group.id &&
+        other.group.participantIds.some((id) =>
+          group.participantIds.includes(id),
+        )
+      ) {
+        known.delete(otherId);
+      }
+    }
+    known.set(group.id, { group, formedAtMs: nowMs });
+  }
+  return known;
+};
+
 // Rings of candidate centres, nearest first; the outer rings let a huddle
 // escape a whole blocked furniture cluster rather than just a single desk.
 const CENTER_CANDIDATE_OFFSETS: [number, number][] = [

@@ -149,6 +149,7 @@ import {
   CONVERSATION_WINDOW_MS,
   conversationTalkTurn,
   deriveConversationGroups,
+  reconcileConversationGroups,
   type ConversationGroup,
   type ConversationSpeechSample,
 } from "@/features/retro-office/core/conversations";
@@ -2922,16 +2923,36 @@ export function RetroOffice3D({
     return names;
   }, [agents]);
 
+  // Every unseen reply in the feed counts, not just the newest one. Agents
+  // answering the same group message land in one render, and reading only the
+  // head would keep all but the last speaker out of the conversation.
+  const conversationSeenRepliesRef = useRef<Set<string> | null>(null);
   useEffect(() => {
-    const latest = feedEvents[0];
-    if (!latest || latest.kind !== "reply") return;
-    const text = latest.text.trim();
-    if (!text) return;
-    conversationSamplesRef.current.set(latest.id, {
-      agentId: latest.id,
-      text,
-      atMs: Date.now(),
-    });
+    const firstPass = conversationSeenRepliesRef.current === null;
+    const seen = conversationSeenRepliesRef.current ?? new Set<string>();
+    conversationSeenRepliesRef.current = seen;
+    const now = Date.now();
+    for (const event of feedEvents) {
+      if (event.kind !== "reply") continue;
+      const text = event.text.trim();
+      if (!text) continue;
+      const key = `${event.id}:${event.ts}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      // Replies already on screen at mount are history, not a live conversation.
+      if (firstPass) continue;
+      conversationSamplesRef.current.set(event.id, {
+        agentId: event.id,
+        text,
+        atMs: now,
+      });
+    }
+    // The feed keeps a handful of entries; bound the memo to match.
+    if (seen.size > 64) {
+      conversationSeenRepliesRef.current = new Set(
+        feedEvents.map((event) => `${event.id}:${event.ts}`),
+      );
+    }
   }, [feedEvents]);
 
   useEffect(() => {
@@ -2960,25 +2981,7 @@ export function RetroOffice3D({
       });
       const known = conversationKnownGroupsRef.current;
       if (suppressSceneSpeechBubbles) known.clear();
-      for (const group of derived) {
-        const entry = known.get(group.id);
-        if (entry) {
-          entry.group = group;
-          continue;
-        }
-        // A grown conversation supersedes the smaller huddle it absorbed.
-        for (const [otherId, other] of known) {
-          if (
-            otherId !== group.id &&
-            other.group.participantIds.every((id) =>
-              group.participantIds.includes(id),
-            )
-          ) {
-            known.delete(otherId);
-          }
-        }
-        known.set(group.id, { group, formedAtMs: now });
-      }
+      reconcileConversationGroups({ derived, known, nowMs: now });
       // A huddle lives until its speech window lapses, but never less than the
       // minimum lifetime — otherwise a one-shot mention dissolves the circle
       // while distant participants are still walking over. The movement tick

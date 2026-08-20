@@ -18,6 +18,7 @@ const { EventEmitter } = require("node:events");
 const { randomUUID } = require("node:crypto");
 
 const { HermesAgentJsonRpcClient, redactUrl } = require("./jsonrpc-client");
+const { createOfficeSpeechSubscriber } = require("./office-speech");
 
 /** Mirrors the numeric WebSocket readyState constants the proxy compares against. */
 const CONNECTING = 0;
@@ -242,6 +243,8 @@ function createHermesAgentUpstream(options) {
    */
   let agentRoster = [fallbackAgent()];
   let defaultAgentId = AGENT_ID;
+  /** Optional feed of turns driven from other clients; see ./office-speech.js. */
+  let officeSpeech = null;
   /** runId -> { sessionKey, runtimeId, buffer, aborted } */
   const activeRuns = new Map();
   /** sessionKey -> runId, so session-scoped events find their run. */
@@ -477,8 +480,42 @@ function createHermesAgentUpstream(options) {
     }
   };
 
+  /**
+   * Relay a turn published by the office bridge plugin.
+   *
+   * The plugin names the profile that spoke, and Hermes3D names each agent
+   * after its profile, so the two line up directly. A turn from a profile this
+   * connection does not know about is dropped rather than guessed at.
+   */
+  const handlePublishedTurn = (turn) => {
+    const agent = agentRoster.find((a) => a.id === turn.profile);
+    if (!agent) {
+      log(`[office-speech] no agent for profile "${turn.profile}"; turn ignored`);
+      return;
+    }
+    emitEvent("office.speech", {
+      agentId: agent.id,
+      name: agent.name,
+      text: turn.text,
+      atMs: turn.atMs,
+      sessionId: turn.sessionId,
+    });
+  };
+
+  const startOfficeSpeech = () => {
+    if (officeSpeech) return;
+    officeSpeech = createOfficeSpeechSubscriber({
+      url,
+      token,
+      onTurn: handlePublishedTurn,
+      log,
+    });
+  };
+
   const handleConnect = async (id) => {
     await loadAgentRoster();
+    // Only worth subscribing once the roster exists to map turns onto.
+    startOfficeSpeech();
     const agents = agentRoster.map((a) => ({
       agentId: a.id,
       name: a.name,
@@ -866,15 +903,22 @@ function createHermesAgentUpstream(options) {
     });
   };
 
+  const stopOfficeSpeech = () => {
+    officeSpeech?.close();
+    officeSpeech = null;
+  };
+
   upstream.close = (code, reason) => {
     closed = true;
     upstream.readyState = CLOSED;
+    stopOfficeSpeech();
     client.close(code, reason);
   };
 
   upstream.terminate = () => {
     closed = true;
     upstream.readyState = CLOSED;
+    stopOfficeSpeech();
     client.terminate();
   };
 
@@ -887,6 +931,7 @@ function createHermesAgentUpstream(options) {
   client.on("close", (code, reason) => {
     closed = true;
     upstream.readyState = CLOSED;
+    stopOfficeSpeech();
     upstream.emit("close", code, Buffer.from(String(reason ?? "")));
   });
 

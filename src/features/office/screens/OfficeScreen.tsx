@@ -187,6 +187,7 @@ import {
   type OfficePhoneCallRequest,
   type OfficeTextMessageRequest,
 } from "@/lib/office/eventTriggers";
+import { toOfficeSpeechFeedEvent } from "@/lib/office/officeSpeech";
 import { buildOfficeSkillTriggerHoldMaps } from "@/lib/office/places";
 import type { MockPhoneCallScenario } from "@/lib/office/call/types";
 import type { MockTextMessageScenario } from "@/lib/office/text/types";
@@ -2658,6 +2659,18 @@ export function OfficeScreen({
           phoneCallByAgentId: officeTriggerStateRef.current.phoneCallByAgentId,
         })
       ) {
+        return;
+      }
+      if (event.event === "office.speech") {
+        // A turn driven from another client (desktop app, TUI, CLI). It has no
+        // run of its own, so it bypasses the chat/run machinery and lands
+        // straight in the feed, which is what the 3D scene watches for speech.
+        const speech = toOfficeSpeechFeedEvent(event.payload, {
+          normalizeText: (value) => normalizeOfficeFeedText(value, 240),
+        });
+        if (speech) {
+          setFeedEvents((previous) => [speech, ...previous].slice(0, 6));
+        }
         return;
       }
       taskBoardEventHandlerRef.current(event);

@@ -6,6 +6,11 @@ import {
   CONVERSATION_MIN_RADIUS,
   conversationTalkTurn,
   deriveConversationGroups,
+  reconcileConversationGroups,
+} from "../../src/features/retro-office/core/conversations";
+import type {
+  ConversationGroup,
+  KnownConversationGroup,
 } from "../../src/features/retro-office/core/conversations";
 import { planChatterBlip } from "../../src/features/retro-office/systems/conversationChatterAudio";
 import { formatAgentSubtitleText } from "../../src/features/retro-office/objects/agents";
@@ -233,5 +238,76 @@ describe("formatAgentSubtitleText", () => {
   it("collapses whitespace and handles empties", () => {
     expect(formatAgentSubtitleText("   ")).toBe("");
     expect(formatAgentSubtitleText("qa\n  lead")).toBe("qa lead");
+  });
+});
+
+describe("reconcileConversationGroups", () => {
+  const group = (ids: string[], lastActivityMs = NOW): ConversationGroup => ({
+    id: [...ids].sort().join("+"),
+    participantIds: [...ids].sort(),
+    lastActivityMs,
+  });
+  const known = (
+    entries: [ConversationGroup, number][],
+  ): Map<string, KnownConversationGroup> =>
+    new Map(
+      entries.map(([entry, formedAtMs]) => [entry.id, { group: entry, formedAtMs }]),
+    );
+
+  it("keeps a huddle's formation time when its membership repeats", () => {
+    const state = known([[group(["allan", "owen"], NOW - 9_000), NOW - 30_000]]);
+    reconcileConversationGroups({
+      derived: [group(["allan", "owen"])],
+      known: state,
+      nowMs: NOW,
+    });
+    expect([...state.keys()]).toEqual(["allan+owen"]);
+    expect(state.get("allan+owen")?.formedAtMs).toBe(NOW - 30_000);
+    expect(state.get("allan+owen")?.group.lastActivityMs).toBe(NOW);
+  });
+
+  it("treats a shrunken group as activity on the huddle already standing", () => {
+    const state = known([
+      [group(["allan", "owen", "rev"], NOW - 9_000), NOW - 30_000],
+    ]);
+    reconcileConversationGroups({
+      derived: [group(["allan", "owen"])],
+      known: state,
+      nowMs: NOW,
+    });
+    // Re-seating the circle here would restart the walk for everyone.
+    expect([...state.keys()]).toEqual(["allan+owen+rev"]);
+    expect(state.get("allan+owen+rev")?.formedAtMs).toBe(NOW - 30_000);
+    expect(state.get("allan+owen+rev")?.group.lastActivityMs).toBe(NOW);
+  });
+
+  it("retires the smaller huddle a grown conversation absorbed", () => {
+    const state = known([[group(["allan", "owen"]), NOW - 5_000]]);
+    reconcileConversationGroups({
+      derived: [group(["allan", "owen", "rev"])],
+      known: state,
+      nowMs: NOW,
+    });
+    expect([...state.keys()]).toEqual(["allan+owen+rev"]);
+  });
+
+  it("never leaves an agent in two huddles at once", () => {
+    const state = known([[group(["allan", "owen"]), NOW - 5_000]]);
+    reconcileConversationGroups({
+      derived: [group(["owen", "samuel"])],
+      known: state,
+      nowMs: NOW,
+    });
+    expect([...state.keys()]).toEqual(["owen+samuel"]);
+  });
+
+  it("leaves an unrelated huddle running", () => {
+    const state = known([[group(["allan", "owen"]), NOW - 5_000]]);
+    reconcileConversationGroups({
+      derived: [group(["rev", "samuel"])],
+      known: state,
+      nowMs: NOW,
+    });
+    expect([...state.keys()].sort()).toEqual(["allan+owen", "rev+samuel"]);
   });
 });
