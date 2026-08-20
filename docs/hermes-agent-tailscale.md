@@ -36,17 +36,26 @@ zero-login setup below possible.
 ### 1. Pin a session token
 
 This is the shared secret between the two machines. Generate one and store it
-in `~/.hermes/.env` — Hermes loads that file at startup, so every later
-`hermes serve` picks it up with no extra flags:
+in `~/.hermes/.env` under a **dedicated name**, then hand it to the backend on
+its command line in [step 2](#2-start-the-backend-on-loopback):
 
 ```bash
-echo "HERMES_DASHBOARD_SESSION_TOKEN=$(openssl rand -hex 32)" >> ~/.hermes/.env
-grep HERMES_DASHBOARD_SESSION_TOKEN ~/.hermes/.env   # copy this for Machine B
+echo "HERMES3D_OFFICE_TOKEN=$(openssl rand -hex 32)" >> ~/.hermes/.env
+grep HERMES3D_OFFICE_TOKEN ~/.hermes/.env   # copy this for Machine B
 ```
 
 Pinning the token matters. Leave it unset and `hermes serve` invents a fresh
 random one on every start, so Studio's saved token stops matching after each
 restart.
+
+> **Do not pin `HERMES_DASHBOARD_SESSION_TOKEN` itself.** That is the variable
+> the backend reads, so pinning it looks like the obvious shortcut — but Hermes
+> loads `~/.hermes/.env` with `override=True`, which forces the value on *every*
+> backend started on this machine. The Hermes desktop app mints a fresh token
+> per launch for the backend it spawns; the pin overrides it, the app's own
+> gateway then rejects the app, and it dies at boot with "the WebSocket
+> (/api/ws) rejected the session token". A dedicated name avoids the collision:
+> only the command below opts into it.
 
 If you use profiles, `.env` is per-profile — write it to the `HERMES_HOME` of
 the profile you intend to serve.
@@ -54,7 +63,17 @@ the profile you intend to serve.
 ### 2. Start the backend on loopback
 
 ```bash
-hermes serve --host 127.0.0.1 --port 9120 --skip-build
+HERMES_DASHBOARD_SESSION_TOKEN="$HERMES3D_OFFICE_TOKEN" \
+  hermes serve --host 127.0.0.1 --port 9120 --skip-build
+```
+
+An inline assignment is not overridden by `.env`, because the pinned name there
+is different. Read the value straight out of the file if your shell has not
+exported it:
+
+```bash
+HERMES_DASHBOARD_SESSION_TOKEN="$(grep '^HERMES3D_OFFICE_TOKEN=' ~/.hermes/.env | cut -d= -f2)" \
+  hermes serve --host 127.0.0.1 --port 9120 --skip-build
 ```
 
 Notes:
@@ -68,14 +87,6 @@ Notes:
   browser UI, so the build is wasted work here.
 - `hermes serve --status` lists running servers. `hermes serve --stop` stops
   **all** Hermes web servers on the machine, not just this one.
-
-If you would rather not keep the token in `.env`, pass it inline instead —
-either form works:
-
-```bash
-HERMES_DASHBOARD_SESSION_TOKEN=<your-token> \
-  hermes serve --host 127.0.0.1 --port 9120 --skip-build
-```
 
 ### 3. Publish it on the tailnet
 
@@ -103,8 +114,8 @@ cause is that `hermes serve` was stopped.
 
 Without this, closing the terminal or rebooting takes the office offline.
 
-Neither unit below carries the token: Hermes reads it from `~/.hermes/.env` on
-its own, so the secret stays out of your service definitions.
+Both units read the token out of `~/.hermes/.env` at launch, so the secret
+stays out of your service definitions and out of `ps`.
 
 **macOS (launchd).** Save as
 `~/Library/LaunchAgents/dev.hermes3d.serve.plist`, substituting the output of
@@ -119,11 +130,9 @@ its own, so the secret stays out of your service definitions.
   <key>Label</key><string>dev.hermes3d.serve</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/opt/homebrew/bin/hermes</string>
-    <string>serve</string>
-    <string>--host</string><string>127.0.0.1</string>
-    <string>--port</string><string>9120</string>
-    <string>--skip-build</string>
+    <string>/bin/sh</string>
+    <string>-c</string>
+    <string>HERMES_DASHBOARD_SESSION_TOKEN="$(grep '^HERMES3D_OFFICE_TOKEN=' "$HOME/.hermes/.env" | cut -d= -f2)" exec /opt/homebrew/bin/hermes serve --host 127.0.0.1 --port 9120 --skip-build</string>
   </array>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
@@ -145,7 +154,7 @@ Description=Hermes backend for Hermes3D
 After=network-online.target
 
 [Service]
-ExecStart=%h/.local/bin/hermes serve --host 127.0.0.1 --port 9120 --skip-build
+ExecStart=/bin/sh -c 'HERMES_DASHBOARD_SESSION_TOKEN="$(grep "^HERMES3D_OFFICE_TOKEN=" %h/.hermes/.env | cut -d= -f2)" exec %h/.local/bin/hermes serve --host 127.0.0.1 --port 9120 --skip-build'
 Restart=always
 
 [Install]
@@ -197,7 +206,8 @@ You should land in the office with one character per `hermes-agent` profile.
 | Symptom | Cause | Fix |
 |---|---|---|
 | `wrong version number` / `EPROTO` | `wss://` against a plaintext port | Use the port you passed to `--https`, not the `hermes serve` port |
-| Gateway closes, HTTP `403` | Token mismatch | Studio's token must equal `HERMES_DASHBOARD_SESSION_TOKEN`. If it worked until a restart, the token was never pinned — see [step 1](#1-pin-a-session-token) |
+| Gateway closes, HTTP `403` | Token mismatch | Studio's token must equal the one the backend started with. If it worked until a restart, the token was never pinned — see [step 1](#1-pin-a-session-token) |
+| The Hermes **desktop app** stops starting | `HERMES_DASHBOARD_SESSION_TOKEN` pinned in `~/.hermes/.env` overrides the token the app minted for its own backend | Rename that line to `HERMES3D_OFFICE_TOKEN` — see [step 1](#1-pin-a-session-token) |
 | Gateway closes, HTTP `401` | Pointed at a gated server | You are hitting `hermes dashboard` (public bind) rather than the loopback `hermes serve`. Gated servers reject `?token=` entirely |
 | Port open, empty response | Backend stopped | `hermes serve --status` on Machine A; see [step 4](#4-keep-it-running) |
 | `400 Invalid Host header` | Tailscale forwards the tailnet hostname to a loopback-bound server | Handled automatically — Studio retries with `Host: localhost`. Seeing it means you are on an older build |

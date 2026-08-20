@@ -20,18 +20,27 @@ silently does nothing.
 - The `hermes-agent` backend, connected to Hermes3D through the **Hermes Agent
   (direct)** backend type. See
   [`hermes-agent-tailscale.md`](hermes-agent-tailscale.md) for that setup.
-- A pinned `HERMES_DASHBOARD_SESSION_TOKEN`. An unpinned backend mints a random
-  token every start, which nothing else can know. The installer warns you if it
-  is missing; pin one with:
+- A pinned `HERMES3D_OFFICE_TOKEN`. An unpinned backend mints a random token
+  every start, which nothing else can know. The installer warns you if it is
+  missing; pin one with:
 
 ```bash
-echo "HERMES_DASHBOARD_SESSION_TOKEN=$(openssl rand -hex 32)" >> ~/.hermes/.env
+echo "HERMES3D_OFFICE_TOKEN=$(openssl rand -hex 32)" >> ~/.hermes/.env
 ```
 
   `~/.hermes/.env` is the only place you need it, even if you run profiles.
   Profiles each have their own `.env`, but this token identifies the one local
-  dashboard they all publish to, so the plugin falls back to the default home
+  backend they all publish to, so the plugin falls back to the default home
   rather than making you copy the same secret into every profile.
+
+> **Do not pin `HERMES_DASHBOARD_SESSION_TOKEN` in `~/.hermes/.env`.** Hermes
+> loads that file with `override=True`, so the pinned value is forced on *every*
+> backend the machine starts. The Hermes desktop app mints a fresh token per
+> launch and hands it to the backend it spawns; a pin overrides it, and the app
+> then fails to start with "the WebSocket (/api/ws) rejected the session token".
+> Pin `HERMES3D_OFFICE_TOKEN` instead and pass it to the office backend on the
+> command line, as [`hermes-agent-tailscale.md`](hermes-agent-tailscale.md)
+> shows. The desktop app keeps minting its own and both run side by side.
 
 ## Install
 
@@ -153,7 +162,8 @@ only if something else is already using `hermes3d` on your event bus.
 | --- | --- | --- |
 | Nothing happens when you chat | Plugin not loaded | Restart the backend after installing; check `hermes plugins list` |
 | Works for one agent, not the others | Installed in the default home only | Re-run `install.sh`, which covers every profile |
-| Warning about the session token at install | Token not pinned | Add `HERMES_DASHBOARD_SESSION_TOKEN` to `~/.hermes/.env` and restart |
-| Still silent with everything enabled | A stale `HERMES_DASHBOARD_SESSION_TOKEN` exported in the shell that started the backend overrides the pinned one | `unset` it, or start the backend from a clean shell |
+| Warning about the session token at install | Token not pinned | Add `HERMES3D_OFFICE_TOKEN` to `~/.hermes/.env` and restart |
+| The desktop app will not start: "the WebSocket (/api/ws) rejected the session token" | `HERMES_DASHBOARD_SESSION_TOKEN` is pinned in `~/.hermes/.env` and overrides the token the app minted for its own backend | Rename that line to `HERMES3D_OFFICE_TOKEN` and pass it to the office backend on its command line |
+| Still silent with everything enabled | A stale `HERMES3D_OFFICE_TOKEN` exported in the shell that started the backend overrides the pinned one | `unset` it, or start the backend from a clean shell |
 | One agent replies but no circle forms | A conversation needs two speakers | Ask a question the whole group answers |
 | Agents gather but the office is silent | Browser audio is locked until you interact | Click once anywhere on the page |

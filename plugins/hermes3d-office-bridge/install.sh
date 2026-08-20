@@ -88,12 +88,21 @@ if (( UNINSTALL )); then
 fi
 
 echo
-if ! grep -qs 'HERMES_DASHBOARD_SESSION_TOKEN' "$HERMES_ROOT/.env"; then
-  echo "WARNING: HERMES_DASHBOARD_SESSION_TOKEN is not pinned in $HERMES_ROOT/.env."
-  echo "         Without it the backend mints a random token each start and the"
-  echo "         office cannot subscribe. Pin one with:"
+if grep -qs '^[[:space:]]*HERMES_DASHBOARD_SESSION_TOKEN=' "$HERMES_ROOT/.env"; then
+  echo "WARNING: HERMES_DASHBOARD_SESSION_TOKEN is pinned in $HERMES_ROOT/.env."
+  echo "         That file loads with override=True, so the pin also lands in the"
+  echo "         backend the desktop app spawns — which mints its own token per"
+  echo "         launch and will then fail to start. Rename the line to"
+  echo "         HERMES3D_OFFICE_TOKEN and pass it to the office backend instead:"
   echo
-  echo "           echo \"HERMES_DASHBOARD_SESSION_TOKEN=\$(openssl rand -hex 32)\" >> $HERMES_ROOT/.env"
+  echo "           HERMES_DASHBOARD_SESSION_TOKEN=\"\$HERMES3D_OFFICE_TOKEN\" hermes serve ..."
+  echo
+elif ! grep -qs '^[[:space:]]*HERMES3D_OFFICE_TOKEN=' "$HERMES_ROOT/.env"; then
+  echo "WARNING: HERMES3D_OFFICE_TOKEN is not pinned in $HERMES_ROOT/.env."
+  echo "         Without it the office backend mints a random token each start and"
+  echo "         the plugin cannot publish to it. Pin one with:"
+  echo
+  echo "           echo \"HERMES3D_OFFICE_TOKEN=\$(openssl rand -hex 32)\" >> $HERMES_ROOT/.env"
   echo
 fi
 echo "Done. Restart the backend so the plugin loads."

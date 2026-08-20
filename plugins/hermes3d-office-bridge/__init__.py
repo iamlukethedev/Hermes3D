@@ -83,13 +83,13 @@ def build_publish_url(*, host: str, port: int, channel: str, token: str) -> str:
     )
 
 
-def _default_home_token() -> str:
-    """Read the token out of the default home's ``.env``.
+def _default_home_token(key: str) -> str:
+    """Read ``key`` out of the default home's ``.env``.
 
     Profiles each get their own ``HERMES_HOME`` and their own ``.env``, so a
     profile-scoped process never sees a token pinned in the default home. That
     matters here because this token is not profile-level config: it identifies
-    the one local dashboard every profile on the machine publishes to. Asking
+    the one office backend every profile on the machine publishes to. Asking
     users to copy the same secret into five ``.env`` files would be worse.
     """
     from pathlib import Path
@@ -103,8 +103,8 @@ def _default_home_token() -> str:
 
     try:
         for line in (root / ".env").read_text(encoding="utf-8").splitlines():
-            key, sep, value = line.partition("=")
-            if sep and key.strip() == "HERMES_DASHBOARD_SESSION_TOKEN":
+            name, sep, value = line.partition("=")
+            if sep and name.strip() == key:
                 return value.strip().strip("'\"")
     except OSError:
         pass
@@ -112,16 +112,32 @@ def _default_home_token() -> str:
 
 
 def _resolve_token() -> str:
-    """The dashboard session token, which is a secret and so lives in the env.
+    """The office backend's session token, which is a secret and lives in env.
 
-    Pin it in ``~/.hermes/.env`` as ``HERMES_DASHBOARD_SESSION_TOKEN`` — an
-    unpinned backend mints a random one per start, which no subscriber can know.
+    Pin it in ``~/.hermes/.env`` as ``HERMES3D_OFFICE_TOKEN`` — an unpinned
+    backend mints a random one per start, which no subscriber can know.
+
+    The office backend's own token variable, ``HERMES_DASHBOARD_SESSION_TOKEN``,
+    deliberately is NOT the key to pin. ``.env`` loads with ``override=True``, so
+    pinning that name hands the same fixed token to *every* backend on the
+    machine — including the one the desktop app spawns, which mints a fresh
+    token per launch and then cannot authenticate against its own gateway. Under
+    a dedicated name the office backend still receives it (passed inline on the
+    command line) while every other backend keeps minting its own.
     """
     import os
 
-    return (
-        os.environ.get("HERMES_DASHBOARD_SESSION_TOKEN") or ""
-    ).strip() or _default_home_token()
+    token = (os.environ.get("HERMES3D_OFFICE_TOKEN") or "").strip()
+    if token:
+        return token
+    token = _default_home_token("HERMES3D_OFFICE_TOKEN")
+    if token:
+        return token
+    # Back-compat for setups written against the earlier guide, which pinned the
+    # dashboard token. Only the pinned file counts: this process's own
+    # ``HERMES_DASHBOARD_SESSION_TOKEN`` authenticates whichever backend it
+    # happens to be, which is rarely the office backend it publishes to.
+    return _default_home_token("HERMES_DASHBOARD_SESSION_TOKEN")
 
 
 def _resolve_profile() -> str:
@@ -165,8 +181,8 @@ def register(ctx: Any) -> None:
     token = _resolve_token()
     if not token:
         _log.warning(
-            "hermes3d-office-bridge: HERMES_DASHBOARD_SESSION_TOKEN is unset; "
-            "turns will not be published. Pin it in ~/.hermes/.env."
+            "hermes3d-office-bridge: HERMES3D_OFFICE_TOKEN is unset; turns will "
+            "not be published. Pin it in ~/.hermes/.env."
         )
         return
 
