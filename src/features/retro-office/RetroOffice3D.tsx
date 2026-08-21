@@ -240,6 +240,7 @@ import {
   getGraphicsQualityConfig,
   isSoftwareWebGLRenderer,
   resolveInitialGraphicsQuality,
+  resolveRenderDpr,
   loadStoredGraphicsQuality,
   saveGraphicsQuality,
   type GraphicsQuality,
@@ -831,7 +832,7 @@ function AdaptiveDprController({ maxDpr: maxDprCap = 1.5 }: { maxDpr?: number })
   const avgDeltaRef = useRef(1 / 60);
 
   useEffect(() => {
-    const initialDpr = Math.min(window.devicePixelRatio || 1, maxDprCap);
+    const initialDpr = resolveRenderDpr(window.devicePixelRatio, maxDprCap);
     currentDprRef.current = initialDpr;
     setDpr(initialDpr);
     const handleVisibilityChange = () => {
@@ -840,7 +841,7 @@ function AdaptiveDprController({ maxDpr: maxDprCap = 1.5 }: { maxDpr?: number })
         setDpr(0.85);
         return;
       }
-      const restoredDpr = Math.min(window.devicePixelRatio || 1, maxDprCap);
+      const restoredDpr = resolveRenderDpr(window.devicePixelRatio, maxDprCap);
       currentDprRef.current = restoredDpr;
       setDpr(restoredDpr);
     };
@@ -857,7 +858,7 @@ function AdaptiveDprController({ maxDpr: maxDprCap = 1.5 }: { maxDpr?: number })
     if (frameCounterRef.current < 45) return;
     frameCounterRef.current = 0;
 
-    const maxDpr = Math.min(window.devicePixelRatio || 1, maxDprCap);
+    const maxDpr = resolveRenderDpr(window.devicePixelRatio, maxDprCap);
     const minDpr = 0.85;
     let nextDpr = currentDprRef.current;
     if (avgDeltaRef.current > 1 / 42) {
@@ -5774,7 +5775,7 @@ export function RetroOffice3D({
         {!immersiveOverlayActive ? (
           <SceneErrorBoundary>
           <Canvas
-            key={canvasResetKey}
+            key={`${canvasResetKey}-${graphicsQuality}`}
             dpr={[0.85, graphicsQualityConfig.maxDpr]}
             camera={{
               position: CAM_POS,
@@ -5782,9 +5783,9 @@ export function RetroOffice3D({
               near: 0.3,
               far: 320,
             }}
-            shadows={{ type: THREE.PCFShadowMap }}
+            shadows={graphicsQualityConfig.shadows ? { type: THREE.PCFShadowMap } : false}
             gl={{
-              antialias: true,
+              antialias: graphicsQualityConfig.antialias,
               powerPreference: "high-performance",
               toneMapping: THREE.ACESFilmicToneMapping,
               toneMappingExposure: 1.0,

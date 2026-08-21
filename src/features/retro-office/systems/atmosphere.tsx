@@ -278,7 +278,7 @@ export function SceneAtmosphere({
         position={SUN_BASE_POSITION.toArray()}
         intensity={3.3}
         color="#ffedd2"
-        castShadow
+        castShadow={config.shadows}
         shadow-mapSize={[config.shadowMapSize, config.shadowMapSize]}
         shadow-bias={-0.00015}
         shadow-normalBias={0.025}
@@ -330,12 +330,14 @@ export function SceneAtmosphere({
       ))}
 
       {/* Drifting dust motes over the office interior. */}
-      <DustMotes
-        centerX={groundCenterX}
-        centerZ={groundCenterZ}
-        extentX={groundWidth * 0.9}
-        extentZ={groundHeight * 0.9}
-      />
+      {config.decorativeMotion ? (
+        <DustMotes
+          centerX={groundCenterX}
+          centerZ={groundCenterZ}
+          extentX={groundWidth * 0.9}
+          extentZ={groundHeight * 0.9}
+        />
+      ) : null}
 
       <DaylightDrift sunRef={sunRef} />
     </>
