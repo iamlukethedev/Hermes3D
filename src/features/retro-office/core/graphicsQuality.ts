@@ -28,6 +28,12 @@ export const GRAPHICS_QUALITY_OPTIONS: Array<{
 ];
 
 export type GraphicsQualityConfig = {
+  /** Whether dynamic shadows are rendered. */
+  shadows: boolean;
+  /** Whether the default framebuffer uses MSAA. */
+  antialias: boolean;
+  /** Whether decorative particles are mounted. */
+  decorativeMotion: boolean;
   /** Shadow map resolution for the key light. */
   shadowMapSize: number;
   /** Upper bound for the adaptive device pixel ratio controller. */
@@ -48,8 +54,11 @@ export type GraphicsQualityConfig = {
 
 const QUALITY_CONFIGS: Record<GraphicsQuality, GraphicsQualityConfig> = {
   low: {
-    shadowMapSize: 1024,
-    maxDpr: 1.25,
+    shadows: false,
+    antialias: false,
+    decorativeMotion: false,
+    shadowMapSize: 512,
+    maxDpr: 1,
     postProcessing: false,
     ambientOcclusion: false,
     aoQuality: "performance",
@@ -58,6 +67,9 @@ const QUALITY_CONFIGS: Record<GraphicsQuality, GraphicsQualityConfig> = {
     followDepthOfField: false,
   },
   balanced: {
+    shadows: true,
+    antialias: true,
+    decorativeMotion: true,
     shadowMapSize: 2048,
     maxDpr: 1.5,
     postProcessing: true,
@@ -68,6 +80,9 @@ const QUALITY_CONFIGS: Record<GraphicsQuality, GraphicsQualityConfig> = {
     followDepthOfField: false,
   },
   ultra: {
+    shadows: true,
+    antialias: true,
+    decorativeMotion: true,
     shadowMapSize: 4096,
     maxDpr: 2,
     postProcessing: true,
@@ -156,8 +171,53 @@ export const detectSoftwareWebGL = (): boolean => {
  * The quality the office should boot with: the user's stored choice, or a
  * hardware-appropriate default.
  */
+export type GraphicsCapabilities = {
+  viewportWidth: number;
+  coarsePointer: boolean;
+  deviceMemory?: number;
+  reducedMotion: boolean;
+  softwareRenderer: boolean;
+};
+
+export const resolveAutomaticGraphicsQuality = (
+  capabilities: GraphicsCapabilities,
+): GraphicsQuality => {
+  if (capabilities.softwareRenderer || capabilities.reducedMotion) return "low";
+  const constrainedMemory =
+    typeof capabilities.deviceMemory === "number" && capabilities.deviceMemory <= 4;
+  if (
+    capabilities.viewportWidth <= 768 &&
+    (capabilities.coarsePointer || constrainedMemory)
+  ) {
+    return "low";
+  }
+  return "balanced";
+};
+
+export const readGraphicsCapabilities = (): GraphicsCapabilities => ({
+  viewportWidth: typeof window === "undefined" ? 1024 : window.innerWidth,
+  coarsePointer:
+    typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches,
+  deviceMemory:
+    typeof navigator === "undefined"
+      ? undefined
+      : (navigator as Navigator & { deviceMemory?: number }).deviceMemory,
+  reducedMotion:
+    typeof window !== "undefined" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+  softwareRenderer: detectSoftwareWebGL(),
+});
+
 export const resolveInitialGraphicsQuality = (): GraphicsQuality =>
-  loadStoredGraphicsQuality() ?? (detectSoftwareWebGL() ? "low" : "balanced");
+  loadStoredGraphicsQuality() ?? resolveAutomaticGraphicsQuality(readGraphicsCapabilities());
+
+export const resolveRenderDpr = (
+  devicePixelRatio: number,
+  maxDpr: number,
+): number => Math.max(0.75, Math.min(devicePixelRatio || 1, maxDpr));
+
+export const shouldRunAnimationFrame = (visibilityState: DocumentVisibilityState): boolean =>
+  visibilityState === "visible";
 
 export const saveGraphicsQuality = (quality: GraphicsQuality) => {
   if (typeof window === "undefined") return;
