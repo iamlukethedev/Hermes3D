@@ -211,6 +211,33 @@ const toKanbanCreateBody = (input) => {
   return body;
 };
 
+/**
+ * Managed fleets keep Hermes3D as a control plane: standup follow-ups enter
+ * policy triage and never receive an ad-hoc repository worktree. The trusted
+ * fleet supervisor later creates and dispatches the registered executable
+ * card after Lead review.
+ */
+const toManagedFleetIntakeBody = (body) => {
+  if (!body || typeof body !== "object") return body;
+  const requestedAssignee = asTrimmed(body.assignee);
+  const intakeNote =
+    requestedAssignee && requestedAssignee !== "crush-lead"
+      ? `Requested specialist (untrusted intake hint): ${requestedAssignee}`
+      : null;
+  const intake = {
+    ...body,
+    ...(intakeNote
+      ? { body: body.body ? `${body.body}\n\n${intakeNote}` : intakeNote }
+      : {}),
+    assignee: "crush-lead",
+    triage: true,
+    workspace_kind: "scratch",
+  };
+  delete intake.workspace_path;
+  delete intake.project_id;
+  return intake;
+};
+
 /** ws(s):// gateway URL -> the http(s) origin serving the kanban plugin API. */
 const kanbanOriginFromWsUrl = (wsUrl) => {
   const parsed = new URL(String(wsUrl));
@@ -296,6 +323,7 @@ module.exports = {
   toHermes3dKanbanTaskDetail,
   toHermes3dKanbanTasks,
   toKanbanCreateBody,
+  toManagedFleetIntakeBody,
   toKanbanPatchBody,
   kanbanOriginFromWsUrl,
   kanbanRequest,

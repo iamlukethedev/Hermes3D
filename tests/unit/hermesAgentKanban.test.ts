@@ -12,6 +12,7 @@ const {
   toHermes3dKanbanTaskRecord,
   toHermes3dKanbanTasks,
   toKanbanCreateBody,
+  toManagedFleetIntakeBody,
   toKanbanPatchBody,
   kanbanOriginFromWsUrl,
 } = await import("../../server/hermes-agent/kanban");
@@ -204,6 +205,24 @@ describe("toKanbanCreateBody", () => {
 
   it("rejects a create request without a title", () => {
     expect(toKanbanCreateBody({ title: "  " })).toBeNull();
+  });
+
+  it("routes managed-fleet standup work to scratch triage without a project", () => {
+    const body = toKanbanCreateBody({
+      title: "Implement the checkout fix",
+      assignedAgentId: "crush-engineer",
+      workspaceKind: "worktree",
+      workspacePath: "C:/GitHub/HermesProjects/.worktrees/unsafe",
+      projectId: "p_untrusted",
+    });
+
+    expect(toManagedFleetIntakeBody(body)).toEqual({
+      title: "Implement the checkout fix",
+      body: "Requested specialist (untrusted intake hint): crush-engineer",
+      assignee: "crush-lead",
+      triage: true,
+      workspace_kind: "scratch",
+    });
   });
 });
 

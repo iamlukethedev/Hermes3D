@@ -128,9 +128,14 @@ const {
   toHermes3dKanbanTaskDetail,
   toHermes3dKanbanTasks,
   toKanbanCreateBody,
+  toManagedFleetIntakeBody,
   toKanbanPatchBody,
   kanbanRequest,
 } = require("./kanban");
+
+const managedFleetMode = Boolean(
+  String(process.env.HERMES3D_FLEET_ROOT ?? "").trim(),
+);
 const {
   isPullRequestDeliveryCandidate,
   publishTaskPullRequest,
@@ -1395,7 +1400,10 @@ function createHermesAgentUpstream(options) {
       }
 
       case "tasks.create": {
-        const createBody = toKanbanCreateBody(p);
+        const mappedCreateBody = toKanbanCreateBody(p);
+        const createBody = managedFleetMode
+          ? toManagedFleetIntakeBody(mappedCreateBody)
+          : mappedCreateBody;
         if (!createBody) {
           return resErr(
             id,
@@ -1413,7 +1421,9 @@ function createHermesAgentUpstream(options) {
             body: createBody,
           });
           let task = result?.task;
-          const desiredStatus = toKanbanPatchBody({ status: p.status }).status;
+          const desiredStatus = managedFleetMode
+            ? null
+            : toKanbanPatchBody({ status: p.status }).status;
           if (
             task &&
             desiredStatus &&
@@ -1478,6 +1488,12 @@ function createHermesAgentUpstream(options) {
       }
 
       case "tasks.dispatch": {
+        if (managedFleetMode) {
+          return resOk(id, {
+            spawned: [],
+            skipped: "managed-supervisor-owned",
+          });
+        }
         const requestedMax = Number(p.max);
         const max = Number.isFinite(requestedMax)
           ? Math.max(1, Math.min(32, Math.round(requestedMax)))
