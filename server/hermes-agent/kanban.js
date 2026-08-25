@@ -44,6 +44,12 @@ const WRITE_STATUS = {
 const asTrimmed = (value) =>
   typeof value === "string" && value.trim() ? value.trim() : "";
 
+const asIdentifier = (value) => {
+  const text = asTrimmed(value);
+  if (text) return text;
+  return typeof value === "number" && Number.isFinite(value) ? String(value) : "";
+};
+
 /** Kanban stores epoch seconds; the office wants ISO strings. */
 const toIsoTime = (seconds) => {
   const numeric = Number(seconds);
@@ -89,12 +95,55 @@ const toHermes3dKanbanTaskRecord = (task) => {
     createdAt,
     updatedAt,
     playbookJobId: null,
-    runId: asTrimmed(task.current_run_id) || null,
+    runId: asIdentifier(task.current_run_id) || null,
     channel: "kanban",
     externalThreadId: asTrimmed(task.session_id) || null,
     lastActivityAt: toIsoTime(task.last_heartbeat_at) ?? updatedAt,
     notes,
     archived: asTrimmed(task.status) === "archived",
+    nativeStatus: asTrimmed(task.status) || null,
+    blockKind: asTrimmed(task.block_kind) || null,
+    blockerReason: asTrimmed(task.last_failure_error) || null,
+  };
+};
+
+const toHermes3dKanbanComment = (comment) => {
+  if (!comment || typeof comment !== "object") return null;
+  const body = asTrimmed(comment.body);
+  if (!body) return null;
+  const createdAt = toIsoTime(comment.created_at);
+  return {
+    id:
+      asIdentifier(comment.id) ||
+      `${createdAt ?? "unknown"}:${asTrimmed(comment.author) || "user"}:${body.slice(0, 32)}`,
+    author: asTrimmed(comment.author) || "user",
+    body,
+    createdAt,
+  };
+};
+
+/** Full task drawer payload from `GET /tasks/{id}` -> office detail shape. */
+const toHermes3dKanbanTaskDetail = (payload) => {
+  const record = toHermes3dKanbanTaskRecord(payload?.task);
+  if (!record) return null;
+  const comments = (Array.isArray(payload?.comments) ? payload.comments : [])
+    .map(toHermes3dKanbanComment)
+    .filter(Boolean);
+  const blockedComment = [...comments]
+    .reverse()
+    .find((comment) => /^BLOCKED\s*:/i.test(comment.body));
+  const blockerReason =
+    record.blockerReason ||
+    (blockedComment ? blockedComment.body.replace(/^BLOCKED\s*:\s*/i, "") : null);
+
+  return {
+    taskId: record.id,
+    nativeStatus: record.nativeStatus,
+    blockKind: record.blockKind,
+    blockerReason,
+    comments,
+    eventCount: Array.isArray(payload?.events) ? payload.events.length : 0,
+    runCount: Array.isArray(payload?.runs) ? payload.runs.length : 0,
   };
 };
 
@@ -130,6 +179,77 @@ const toKanbanPatchBody = (patch) => {
   if (status) body.status = status;
   if (patch?.archived === true) body.status = "archived";
   return body;
+};
+
+/** An office task create request -> the kanban `POST /tasks` body. */
+const toKanbanCreateBody = (input) => {
+  const title = asTrimmed(input?.title);
+  if (!title) return null;
+  const body = { title };
+  if (typeof input?.description === "string") body.body = input.description;
+  const assignee = asTrimmed(input?.assignedAgentId);
+  if (assignee) body.assignee = assignee;
+  const idempotencyKey = asTrimmed(input?.idempotencyKey);
+  if (idempotencyKey) body.idempotency_key = idempotencyKey;
+  const maxRuntimeSeconds = Number(input?.maxRuntimeSeconds);
+  if (Number.isFinite(maxRuntimeSeconds) && maxRuntimeSeconds > 0) {
+    body.max_runtime_seconds = Math.round(maxRuntimeSeconds);
+  }
+  if (input?.goalMode === true) body.goal_mode = true;
+  const goalMaxTurns = Number(input?.goalMaxTurns);
+  if (Number.isFinite(goalMaxTurns) && goalMaxTurns > 0) {
+    body.goal_max_turns = Math.round(goalMaxTurns);
+  }
+  const workspaceKind = asTrimmed(input?.workspaceKind);
+  if (["scratch", "dir", "worktree"].includes(workspaceKind)) {
+    body.workspace_kind = workspaceKind;
+  }
+  const workspacePath = asTrimmed(input?.workspacePath);
+  if (workspacePath) body.workspace_path = workspacePath;
+  const projectId = asTrimmed(input?.projectId);
+  if (projectId) body.project_id = projectId;
+  return body;
+};
+
+/**
+ * Managed fleets keep Hermes3D as a control plane: standup follow-ups enter
+ * policy triage and never receive an ad-hoc repository worktree. The trusted
+ * fleet supervisor later creates and dispatches the registered executable
+ * card after Lead review.
+ */
+const toManagedFleetIntakeBody = (body) => {
+  if (!body || typeof body !== "object") return body;
+  const requestedAssignee = asTrimmed(body.assignee);
+  const intakeNote =
+    requestedAssignee && requestedAssignee !== "crush-lead"
+      ? `Requested specialist (untrusted intake hint): ${requestedAssignee}`
+      : null;
+  const intake = {
+    ...body,
+    ...(intakeNote
+      ? { body: body.body ? `${body.body}\n\n${intakeNote}` : intakeNote }
+      : {}),
+    assignee: "crush-lead",
+    triage: true,
+    workspace_kind: "scratch",
+  };
+  delete intake.workspace_path;
+  delete intake.project_id;
+  return intake;
+};
+
+/**
+ * Managed Hermes3D may edit intake wording, but lifecycle and routing belong
+ * to the trusted fleet supervisor. In particular, standup UI state such as
+ * `working` must never promote a native `triage` card to `ready`.
+ */
+const toManagedFleetPatchBody = (body) => {
+  if (!body || typeof body !== "object") return {};
+  const patch = {};
+  const title = asTrimmed(body.title);
+  if (title) patch.title = title;
+  if (typeof body.body === "string") patch.body = body.body;
+  return patch;
 };
 
 /** ws(s):// gateway URL -> the http(s) origin serving the kanban plugin API. */
@@ -214,7 +334,11 @@ const kanbanRequest = ({ wsUrl, token, useLoopbackHost, method, path, body }) =>
 module.exports = {
   KANBAN_TASK_ID_PREFIX,
   toHermes3dKanbanTaskRecord,
+  toHermes3dKanbanTaskDetail,
   toHermes3dKanbanTasks,
+  toKanbanCreateBody,
+  toManagedFleetIntakeBody,
+  toManagedFleetPatchBody,
   toKanbanPatchBody,
   kanbanOriginFromWsUrl,
   kanbanRequest,

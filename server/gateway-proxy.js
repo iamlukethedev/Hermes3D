@@ -82,6 +82,13 @@ const createFrameRateLimiter = (
 const isUpstreamAllowed = (url) => {
   const allowlist = (process.env.UPSTREAM_ALLOWLIST || "").trim();
   if (!allowlist) {
+    try {
+      const parsed = new URL(url);
+      const host = parsed.hostname.toLowerCase();
+      if (host === "127.0.0.1" || host === "localhost" || host === "::1") {
+        return true;
+      }
+    } catch {}
     if (process.env.NODE_ENV === "production") {
       console.warn(
         "[gateway-proxy] refusing upstream connection: UPSTREAM_ALLOWLIST is " +

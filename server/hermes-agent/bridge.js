@@ -14,18 +14,134 @@
  * that are created or resumed on first use.
  */
 
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
 const { EventEmitter } = require("node:events");
 const { randomUUID } = require("node:crypto");
 
 const { HermesAgentJsonRpcClient, redactUrl } = require("./jsonrpc-client");
 const { createOfficeSpeechSubscriber } = require("./office-speech");
+const { isManagedFleetAgent, managedProfileWriteError } = require("../managed-fleet");
+
+const resolveAgentFilePath = (agentId, fileName) => {
+  const candidates = [];
+  if (process.env.LOCALAPPDATA) {
+    candidates.push(path.join(process.env.LOCALAPPDATA, "hermes", "profiles", agentId, fileName));
+    candidates.push(path.join(process.env.LOCALAPPDATA, "hermes", fileName));
+  }
+  const home = os.homedir();
+  if (home) {
+    candidates.push(path.join(home, ".hermes", "profiles", agentId, fileName));
+    candidates.push(path.join(home, ".hermes", fileName));
+    candidates.push(path.join(home, ".config", "hermes", "profiles", agentId, fileName));
+  }
+  for (const p of candidates) {
+    if (fs.existsSync(p)) return p;
+  }
+  if (process.env.LOCALAPPDATA) {
+    return path.join(process.env.LOCALAPPDATA, "hermes", "profiles", agentId, fileName);
+  }
+  return path.join(home, ".hermes", "profiles", agentId, fileName);
+};
+
+const PACKAGED_SKILL_KEY_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
+const PACKAGED_SKILL_METADATA_RE = /["']skillKey["']\s*:\s*["']([^"']+)["']/i;
+
+const readFrontmatterValue = (content, key) => {
+  const match = String(content ?? "").match(
+    new RegExp(`^${key}:\\s*(.+?)\\s*$`, "mi"),
+  );
+  return asString(match?.[1]).replace(/^['"]|['"]$/g, "");
+};
+
+const listPackagedSkillEntries = (workspaceDir) => {
+  const workspace = asString(workspaceDir);
+  if (!workspace) return [];
+  const skillsRoot = path.join(workspace, "skills");
+  let directories = [];
+  try {
+    directories = fs.readdirSync(skillsRoot, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  const emptyRequirements = { bins: [], anyBins: [], env: [], config: [], os: [] };
+  return directories.flatMap((entry) => {
+    if (!entry.isDirectory()) return [];
+    const baseDir = path.join(skillsRoot, entry.name);
+    const filePath = path.join(baseDir, "SKILL.md");
+    let content = "";
+    try {
+      content = fs.readFileSync(filePath, "utf8");
+    } catch {
+      return [];
+    }
+    const skillKey = asString(content.match(PACKAGED_SKILL_METADATA_RE)?.[1]);
+    if (!PACKAGED_SKILL_KEY_RE.test(skillKey) || skillKey !== entry.name) return [];
+    return [{
+      name: readFrontmatterValue(content, "name") || skillKey,
+      description: readFrontmatterValue(content, "description"),
+      source: "hermes-workspace",
+      bundled: false,
+      filePath,
+      baseDir,
+      skillKey,
+      always: false,
+      disabled: false,
+      blockedByAllowlist: false,
+      eligible: true,
+      requirements: { ...emptyRequirements },
+      missing: { ...emptyRequirements },
+      configChecks: [],
+      install: [],
+    }];
+  });
+};
+
+const resolvePackagedSkillFiles = (skillDir, files) => {
+  if (!Array.isArray(files) || files.length === 0) {
+    throw new Error("Packaged skill files are required.");
+  }
+  const resolvedSkillDir = path.resolve(skillDir);
+  const prefix = `${resolvedSkillDir}${path.sep}`;
+  return files.map((file) => {
+    const relativePath = asString(file?.relativePath).replace(/\\/g, "/");
+    const content = typeof file?.content === "string" ? file.content : null;
+    if (
+      !relativePath ||
+      path.isAbsolute(relativePath) ||
+      relativePath.split("/").some((segment) => !segment || segment === "..") ||
+      content === null
+    ) {
+      throw new Error("Packaged skill contains an invalid file entry.");
+    }
+    const targetPath = path.resolve(resolvedSkillDir, relativePath);
+    if (!targetPath.startsWith(prefix)) {
+      throw new Error("Packaged skill file resolves outside its skill directory.");
+    }
+    return { targetPath, content };
+  });
+};
 const {
   KANBAN_TASK_ID_PREFIX,
   toHermes3dKanbanTaskRecord,
+  toHermes3dKanbanTaskDetail,
   toHermes3dKanbanTasks,
+  toKanbanCreateBody,
+  toManagedFleetIntakeBody,
+  toManagedFleetPatchBody,
   toKanbanPatchBody,
   kanbanRequest,
 } = require("./kanban");
+
+const managedFleetMode = Boolean(
+  String(process.env.HERMES3D_FLEET_ROOT ?? "").trim(),
+);
+const {
+  isPullRequestDeliveryCandidate,
+  publishTaskPullRequest,
+  setPullRequestDeliveryStatus,
+} = require("./pr-delivery");
 
 /** Mirrors the numeric WebSocket readyState constants the proxy compares against. */
 const CONNECTING = 0;
@@ -39,6 +155,9 @@ const MAIN_SESSION_KEY = `agent:${AGENT_ID}:${MAIN_KEY}`;
 
 /** hermes-agent's `session.create` / `session.resume` can be slow on a cold profile. */
 const SESSION_RPC_TIMEOUT_MS = 60_000;
+
+/** A profile database can take a moment to open while hermes-agent is starting. */
+const SESSION_LIST_RETRY_DELAYS_MS = [150, 400, 1_000];
 
 /**
  * The slice of the `ws` WebSocket surface `gateway-proxy.js` relies on.
@@ -63,15 +182,55 @@ const errorMessage = (err) => {
   return err.message || String(err);
 };
 
-/** hermes-agent history rows use `text`; Hermes3D expects `content`. */
+const isTransientStateDbUnavailable = (err) =>
+  /state\.db unavailable/i.test(errorMessage(err));
+
+const wait = (delayMs) => new Promise((resolve) => setTimeout(resolve, delayMs));
+
+/** Retry only the known cold-start profile database race. */
+const requestSessionListWithRetry = async (
+  client,
+  params,
+  { delays = SESSION_LIST_RETRY_DELAYS_MS, sleep = wait } = {}
+) => {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await client.request("session.list", params);
+    } catch (err) {
+      if (!isTransientStateDbUnavailable(err) || attempt >= delays.length) {
+        throw err;
+      }
+      await sleep(delays[attempt]);
+    }
+  }
+};
+
+/** hermes-agent history rows use `text` or `content` or nested `message`. */
 const toHermes3dMessages = (messages) => {
   if (!Array.isArray(messages)) return [];
   return messages
-    .filter((m) => m && (m.role === "user" || m.role === "assistant"))
-    .map((m) => ({
-      role: m.role,
-      content: typeof m.text === "string" ? m.text : String(m.content ?? ""),
-    }));
+    .filter((m) => m && (m.role === "user" || m.role === "assistant" || m.message?.role === "user" || m.message?.role === "assistant"))
+    .map((m) => {
+      const role = m.role || m.message?.role || "assistant";
+      let content = "";
+      if (typeof m.text === "string" && m.text) {
+        content = m.text;
+      } else if (typeof m.content === "string" && m.content) {
+        content = m.content;
+      } else if (typeof m.message?.content === "string" && m.message.content) {
+        content = m.message.content;
+      } else if (typeof m.message?.text === "string" && m.message.text) {
+        content = m.message.text;
+      } else if (Array.isArray(m.content)) {
+        content = m.content.map((p) => (typeof p === "string" ? p : p?.text || p?.content || "")).filter(Boolean).join("\n");
+      } else if (Array.isArray(m.message?.content)) {
+        content = m.message.content.map((p) => (typeof p === "string" ? p : p?.text || p?.content || "")).filter(Boolean).join("\n");
+      }
+      return {
+        role,
+        content: content || (typeof m.content === "string" ? m.content : ""),
+      };
+    });
 };
 
 const parseTimestampMs = (value) => {
@@ -181,8 +340,23 @@ const toDisplayName = (name) =>
  */
 const toHermes3dAgents = (profiles) => {
   if (!Array.isArray(profiles)) return [];
+  const allowlist = (process.env.HERMES3D_AGENT_ALLOWLIST || "")
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+  const blocklist = (process.env.HERMES3D_AGENT_BLOCKLIST || "")
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+
   const agents = profiles
     .filter((p) => p && typeof p === "object" && asString(p.name))
+    .filter((p) => {
+      const name = asString(p.name).toLowerCase();
+      if (allowlist.length > 0 && !allowlist.includes(name)) return false;
+      if (blocklist.length > 0 && blocklist.includes(name)) return false;
+      return true;
+    })
     .map((p) => {
       const name = asString(p.name);
       const isDefault = p.is_default === true;
@@ -256,9 +430,62 @@ function createHermesAgentUpstream(options) {
   const activeRuns = new Map();
   /** sessionKey -> runId, so session-scoped events find their run. */
   const runBySessionKey = new Map();
+  /** task id -> last host-side GitHub delivery attempt timestamp. */
+  const pullRequestDeliveryAttempts = new Map();
+  /** Prevent overlapping poll cycles from publishing the same branch twice. */
+  const pullRequestDeliveriesInFlight = new Set();
 
   let seq = 0;
   let closed = false;
+
+  const schedulePullRequestDelivery = (task) => {
+    if (!isPullRequestDeliveryCandidate(task)) return;
+    const taskId = asString(task.id);
+    if (!taskId || pullRequestDeliveriesInFlight.has(taskId)) return;
+    const now = Date.now();
+    const lastAttemptAt = pullRequestDeliveryAttempts.get(taskId) ?? 0;
+    if (now - lastAttemptAt < 5 * 60_000) return;
+    pullRequestDeliveryAttempts.set(taskId, now);
+    pullRequestDeliveriesInFlight.add(taskId);
+
+    void (async () => {
+      let nextBody = asString(task.body);
+      try {
+        const delivery = await publishTaskPullRequest(task);
+        if (delivery.status === "skipped") return;
+        nextBody = delivery.body;
+        log(
+          `[hermes-agent] GitHub PR ${delivery.status} for ${taskId}: ${delivery.url}`,
+        );
+      } catch (err) {
+        const detail = errorMessage(err).slice(0, 400);
+        nextBody = setPullRequestDeliveryStatus(
+          task.body,
+          `blocked — ${detail || "unknown host-side delivery error"}`,
+        );
+        log(`[hermes-agent] GitHub PR delivery blocked for ${taskId}: ${detail}`);
+      }
+
+      if (nextBody !== asString(task.body)) {
+        try {
+          await kanbanRequest({
+            wsUrl: url,
+            token,
+            useLoopbackHost: client.usedLoopbackHost,
+            method: "PATCH",
+            path: `/tasks/${encodeURIComponent(taskId)}`,
+            body: { body: nextBody },
+          });
+        } catch (err) {
+          log(
+            `[hermes-agent] failed to persist GitHub delivery status for ${taskId}: ${errorMessage(err)}`,
+          );
+        }
+      }
+    })().finally(() => {
+      pullRequestDeliveriesInFlight.delete(taskId);
+    });
+  };
 
   const emitFrame = (frame) => {
     if (closed) return;
@@ -557,9 +784,16 @@ function createHermesAgentUpstream(options) {
           "exec.approval.resolve",
           "wake",
           "skills.status",
+          "skills.packaged.install",
           "models.list",
           "tasks.list",
+          "tasks.show",
+          "tasks.activity",
+          "tasks.comment",
+          "tasks.unblock",
+          "tasks.create",
           "tasks.update",
+          "tasks.dispatch",
           "cron.list",
         ],
         events: ["chat", "agent", "presence", "heartbeat", "cron"],
@@ -571,6 +805,17 @@ function createHermesAgentUpstream(options) {
       auth: { role: "operator", scopes: ["operator.admin", "operator.approvals"] },
       policy: { tickIntervalMs: 30_000 },
     });
+  };
+
+  const readKanbanTaskDetail = async (taskId) => {
+    const payload = await kanbanRequest({
+      wsUrl: url,
+      token,
+      useLoopbackHost: client.usedLoopbackHost,
+      method: "GET",
+      path: `/tasks/${encodeURIComponent(taskId)}`,
+    });
+    return toHermes3dKanbanTaskDetail(payload);
   };
 
   const handleMethod = async (method, params, id) => {
@@ -590,11 +835,41 @@ function createHermesAgentUpstream(options) {
           })),
         });
 
-      case "agents.files.get":
+      case "agents.files.get": {
+        const agentId = asString(p?.agentId) || "default";
+        const name = asString(p?.name) || "SOUL.md";
+        const filePath = resolveAgentFilePath(agentId, name);
+        if (filePath && fs.existsSync(filePath)) {
+          try {
+            const content = fs.readFileSync(filePath, "utf8");
+            return resOk(id, { file: { missing: false, content, path: filePath } });
+          } catch (e) {
+            return resOk(id, { file: { missing: true } });
+          }
+        }
         return resOk(id, { file: { missing: true } });
+      }
 
-      case "agents.files.set":
+      case "agents.files.set": {
+        const agentId = asString(p?.agentId) || "default";
+        if (isManagedFleetAgent(agentId)) {
+          return resError(id, -32003, managedProfileWriteError(agentId));
+        }
+        const name = asString(p?.name) || "SOUL.md";
+        const content = typeof p?.content === "string" ? p.content : "";
+        const filePath = resolveAgentFilePath(agentId, name);
+        if (filePath) {
+          try {
+            const dir = path.dirname(filePath);
+            if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+            fs.writeFileSync(filePath, content, "utf8");
+            return resOk(id, { ok: true, path: filePath });
+          } catch (e) {
+            return resError(id, -32603, `Failed to save file: ${errorMessage(e)}`);
+          }
+        }
         return resOk(id, {});
+      }
 
       case "config.get":
         return resOk(id, {
@@ -616,7 +891,7 @@ function createHermesAgentUpstream(options) {
             const profile = asString(agent.profile);
             let stored = [];
             try {
-              const result = await client.request("session.list", {
+              const result = await requestSessionListWithRetry(client, {
                 limit: 20,
                 ...(profile ? { profile } : {}),
               });
@@ -824,12 +1099,68 @@ function createHermesAgentUpstream(options) {
       }
 
       case "skills.status": {
+        const agentId = asString(p.agentId) || defaultAgentId;
+        const agent = agentRoster.find((candidate) => candidate.id === agentId);
+        const workspaceDir = asString(agent?.workspace);
+        const managedSkillsDir = workspaceDir ? path.join(workspaceDir, "skills") : "";
+        const profile = profileForAgent(agentId);
         try {
-          const result = await client.request("skills.manage", { action: "list" });
-          const skills = Array.isArray(result?.skills) ? result.skills : [];
-          return resOk(id, { skills });
+          await client.request("skills.manage", {
+            action: "list",
+            ...(profile ? { profile } : {}),
+          });
+          return resOk(id, {
+            workspaceDir,
+            managedSkillsDir,
+            skills: listPackagedSkillEntries(workspaceDir),
+          });
         } catch {
-          return resOk(id, { skills: [] });
+          return resOk(id, {
+            workspaceDir,
+            managedSkillsDir,
+            skills: listPackagedSkillEntries(workspaceDir),
+          });
+        }
+      }
+
+      case "skills.packaged.install": {
+        const agentId = asString(p.agentId) || defaultAgentId;
+        const agent = agentRoster.find((candidate) => candidate.id === agentId);
+        const workspaceDir = asString(agent?.workspace);
+        const skillKey = asString(p.skillKey);
+        if (!workspaceDir) {
+          return resErr(
+            id,
+            "hermes_agent.skills_workspace_missing",
+            `No profile workspace is available for agent "${agentId}".`,
+          );
+        }
+        if (!PACKAGED_SKILL_KEY_RE.test(skillKey)) {
+          return resErr(
+            id,
+            "hermes_agent.skills_package_invalid",
+            "Packaged skill key is invalid.",
+          );
+        }
+        const skillDir = path.resolve(workspaceDir, "skills", skillKey);
+        try {
+          const files = resolvePackagedSkillFiles(skillDir, p.files);
+          for (const file of files) {
+            fs.mkdirSync(path.dirname(file.targetPath), { recursive: true });
+            fs.writeFileSync(file.targetPath, file.content, "utf8");
+          }
+          return resOk(id, {
+            installed: true,
+            installedPath: skillDir,
+            source: "hermes-workspace",
+            skillKey,
+          });
+        } catch (err) {
+          return resErr(
+            id,
+            "hermes_agent.skills_package_install_failed",
+            errorMessage(err),
+          );
         }
       }
 
@@ -891,12 +1222,236 @@ function createHermesAgentUpstream(options) {
             method: "GET",
             path: `/board?include_archived=${includeArchived}`,
           });
+          for (const column of Array.isArray(board?.columns) ? board.columns : []) {
+            for (const task of Array.isArray(column?.tasks) ? column.tasks : []) {
+              schedulePullRequestDelivery(task);
+            }
+          }
           return resOk(id, { tasks: toHermes3dKanbanTasks(board) });
         } catch (err) {
           // A hidden/disabled kanban plugin or older backend is not an error
           // state for the office — the board just has no hermes tasks.
           log(`[hermes-agent] kanban board unavailable: ${errorMessage(err)}`);
           return resOk(id, { tasks: [] });
+        }
+      }
+
+      case "tasks.show": {
+        const rawId = asString(p.id);
+        if (!rawId.startsWith(KANBAN_TASK_ID_PREFIX)) {
+          return resErr(
+            id,
+            "hermes_agent.tasks_show_unsupported",
+            "Only Hermes kanban tasks expose native task details on this backend.",
+          );
+        }
+        try {
+          const detail = await readKanbanTaskDetail(
+            rawId.slice(KANBAN_TASK_ID_PREFIX.length),
+          );
+          if (!detail) {
+            return resErr(
+              id,
+              "hermes_agent.tasks_show_failed",
+              "hermes-agent did not return task details.",
+            );
+          }
+          return resOk(id, detail);
+        } catch (err) {
+          return resErr(id, "hermes_agent.tasks_show_failed", errorMessage(err));
+        }
+      }
+
+      case "tasks.comment": {
+        const rawId = asString(p.id);
+        const body = asString(p.body).trim();
+        if (!rawId.startsWith(KANBAN_TASK_ID_PREFIX)) {
+          return resErr(
+            id,
+            "hermes_agent.tasks_comment_unsupported",
+            "Only Hermes kanban tasks accept comments on this backend.",
+          );
+        }
+        if (!body) {
+          return resErr(
+            id,
+            "hermes_agent.tasks_comment_invalid",
+            "Comment text is required.",
+          );
+        }
+        const taskId = rawId.slice(KANBAN_TASK_ID_PREFIX.length);
+        try {
+          await kanbanRequest({
+            wsUrl: url,
+            token,
+            useLoopbackHost: client.usedLoopbackHost,
+            method: "POST",
+            path: `/tasks/${encodeURIComponent(taskId)}/comments`,
+            body: { body, author: "hermes3d-user" },
+          });
+          const detail = await readKanbanTaskDetail(taskId);
+          if (!detail) {
+            return resErr(
+              id,
+              "hermes_agent.tasks_comment_failed",
+              "Comment was saved, but refreshed task details were unavailable.",
+            );
+          }
+          return resOk(id, detail);
+        } catch (err) {
+          return resErr(id, "hermes_agent.tasks_comment_failed", errorMessage(err));
+        }
+      }
+
+      case "tasks.unblock": {
+        const rawId = asString(p.id);
+        const reply = asString(p.reply).trim();
+        if (!rawId.startsWith(KANBAN_TASK_ID_PREFIX)) {
+          return resErr(
+            id,
+            "hermes_agent.tasks_unblock_unsupported",
+            "Only Hermes kanban tasks can be resumed on this backend.",
+          );
+        }
+        if (!reply) {
+          return resErr(
+            id,
+            "hermes_agent.tasks_unblock_invalid",
+            "A reply is required before resuming the task.",
+          );
+        }
+        const taskId = rawId.slice(KANBAN_TASK_ID_PREFIX.length);
+        try {
+          await kanbanRequest({
+            wsUrl: url,
+            token,
+            useLoopbackHost: client.usedLoopbackHost,
+            method: "POST",
+            path: `/tasks/${encodeURIComponent(taskId)}/comments`,
+            body: { body: reply, author: "hermes3d-user" },
+          });
+          await kanbanRequest({
+            wsUrl: url,
+            token,
+            useLoopbackHost: client.usedLoopbackHost,
+            method: "PATCH",
+            path: `/tasks/${encodeURIComponent(taskId)}`,
+            body: { status: "ready" },
+          });
+
+          let dispatchWarning = null;
+          try {
+            await kanbanRequest({
+              wsUrl: url,
+              token,
+              useLoopbackHost: client.usedLoopbackHost,
+              method: "POST",
+              path: "/dispatch?max=1",
+            });
+          } catch (err) {
+            dispatchWarning = `Task is ready, but the dispatcher could not be nudged: ${errorMessage(err)}`;
+            log(`[hermes-agent] ${dispatchWarning}`);
+          }
+
+          const detail = await readKanbanTaskDetail(taskId);
+          if (!detail) {
+            return resErr(
+              id,
+              "hermes_agent.tasks_unblock_failed",
+              "Task was resumed, but refreshed task details were unavailable.",
+            );
+          }
+          return resOk(id, { ...detail, dispatchWarning });
+        } catch (err) {
+          return resErr(id, "hermes_agent.tasks_unblock_failed", errorMessage(err));
+        }
+      }
+
+      case "tasks.activity": {
+        const rawId = asString(p.id);
+        if (!rawId.startsWith(KANBAN_TASK_ID_PREFIX)) {
+          return resErr(
+            id,
+            "hermes_agent.tasks_activity_unsupported",
+            "Only Hermes kanban tasks expose worker activity on this backend.",
+          );
+        }
+        const taskId = rawId.slice(KANBAN_TASK_ID_PREFIX.length);
+        const requestedTail = Number(p.tail);
+        const tail = Number.isFinite(requestedTail)
+          ? Math.max(1_000, Math.min(200_000, Math.round(requestedTail)))
+          : 24_000;
+        try {
+          const result = await kanbanRequest({
+            wsUrl: url,
+            token,
+            useLoopbackHost: client.usedLoopbackHost,
+            method: "GET",
+            path: `/tasks/${encodeURIComponent(taskId)}/log?tail=${tail}`,
+          });
+          return resOk(id, {
+            taskId: rawId,
+            exists: result?.exists !== false,
+            sizeBytes: Number(result?.size_bytes) || 0,
+            content: asString(result?.content),
+          });
+        } catch (err) {
+          return resErr(id, "hermes_agent.tasks_activity_failed", errorMessage(err));
+        }
+      }
+
+      case "tasks.create": {
+        const mappedCreateBody = toKanbanCreateBody(p);
+        const createBody = managedFleetMode
+          ? toManagedFleetIntakeBody(mappedCreateBody)
+          : mappedCreateBody;
+        if (!createBody) {
+          return resErr(
+            id,
+            "hermes_agent.tasks_create_invalid",
+            "Task title is required.",
+          );
+        }
+        try {
+          let result = await kanbanRequest({
+            wsUrl: url,
+            token,
+            useLoopbackHost: client.usedLoopbackHost,
+            method: "POST",
+            path: "/tasks",
+            body: createBody,
+          });
+          let task = result?.task;
+          const desiredStatus = managedFleetMode
+            ? null
+            : toKanbanPatchBody({ status: p.status }).status;
+          if (
+            task &&
+            desiredStatus &&
+            desiredStatus !== "ready" &&
+            asString(task.status) !== desiredStatus
+          ) {
+            result = await kanbanRequest({
+              wsUrl: url,
+              token,
+              useLoopbackHost: client.usedLoopbackHost,
+              method: "PATCH",
+              path: `/tasks/${encodeURIComponent(asString(task.id))}`,
+              body: { status: desiredStatus },
+            });
+            task = result?.task;
+          }
+          const record = toHermes3dKanbanTaskRecord(task);
+          if (!record) {
+            return resErr(
+              id,
+              "hermes_agent.tasks_create_failed",
+              "hermes-agent did not return the created task.",
+            );
+          }
+          return resOk(id, record);
+        } catch (err) {
+          return resErr(id, "hermes_agent.tasks_create_failed", errorMessage(err));
         }
       }
 
@@ -911,13 +1466,20 @@ function createHermesAgentUpstream(options) {
         }
         const taskId = rawId.slice(KANBAN_TASK_ID_PREFIX.length);
         try {
+          const mappedPatchBody = toKanbanPatchBody(p);
+          const updateBody = managedFleetMode
+            ? toManagedFleetPatchBody(mappedPatchBody)
+            : mappedPatchBody;
           const result = await kanbanRequest({
             wsUrl: url,
             token,
             useLoopbackHost: client.usedLoopbackHost,
-            method: "PATCH",
+            method:
+              managedFleetMode && Object.keys(updateBody).length === 0
+                ? "GET"
+                : "PATCH",
             path: `/tasks/${encodeURIComponent(taskId)}`,
-            body: toKanbanPatchBody(p),
+            ...(Object.keys(updateBody).length > 0 ? { body: updateBody } : {}),
           });
           const record = toHermes3dKanbanTaskRecord(result?.task);
           if (!record) {
@@ -930,6 +1492,31 @@ function createHermesAgentUpstream(options) {
           return resOk(id, record);
         } catch (err) {
           return resErr(id, "hermes_agent.tasks_update_failed", errorMessage(err));
+        }
+      }
+
+      case "tasks.dispatch": {
+        if (managedFleetMode) {
+          return resOk(id, {
+            spawned: [],
+            skipped: "managed-supervisor-owned",
+          });
+        }
+        const requestedMax = Number(p.max);
+        const max = Number.isFinite(requestedMax)
+          ? Math.max(1, Math.min(32, Math.round(requestedMax)))
+          : 8;
+        try {
+          const result = await kanbanRequest({
+            wsUrl: url,
+            token,
+            useLoopbackHost: client.usedLoopbackHost,
+            method: "POST",
+            path: `/dispatch?max=${max}`,
+          });
+          return resOk(id, result);
+        } catch (err) {
+          return resErr(id, "hermes_agent.tasks_dispatch_failed", errorMessage(err));
         }
       }
 
@@ -1014,6 +1601,8 @@ module.exports = {
   toHermes3dSchedule,
   toHermes3dAgents,
   resolveDefaultAgentId,
+  requestSessionListWithRetry,
+  isTransientStateDbUnavailable,
   MAIN_SESSION_KEY,
   AGENT_ID,
 };

@@ -8,6 +8,7 @@ import {
   GYM_ROOM_X,
   QA_LAB_END_X,
   QA_LAB_X,
+  STANDUP_TABLE_ID,
   WALL_THICKNESS,
 } from "@/features/retro-office/core/constants";
 import { nextUid } from "@/features/retro-office/core/geometry";
@@ -28,45 +29,71 @@ export type OfficeLayoutPreset = "office" | "lobby";
 
 const DEFAULT_PINGPONG_TABLE: FurnitureSeed = {
   type: "pingpong",
-  x: 950,
-  y: 600,
+  x: 1350,
+  y: 350,
   w: 100,
   h: 60,
 };
 
 const DEFAULT_ATM_MACHINE: FurnitureSeed = {
   type: "atm",
-  x: 430,
-  y: 210,
-  facing: 90,
+  x: 920,
+  y: 460,
+  facing: 180,
 };
 
 const DEFAULT_PHONE_BOOTH: FurnitureSeed = {
   type: "phone_booth",
-  x: 1050,
-  y: 190,
+  x: 535,
+  y: 150,
   facing: 270,
 };
 
 const DEFAULT_SMS_BOOTH: FurnitureSeed = {
   type: "sms_booth",
-  x: 700,
-  y: 10,
-  facing: 0,
+  x: 535,
+  y: 550,
+  facing: 270,
 };
 
 const DEFAULT_JUKEBOX: FurnitureSeed = {
   type: "jukebox",
-  x: 20,
-  y: 380,
+  x: 1140,
+  y: 350,
   facing: 90,
 };
 
 const DEFAULT_KANBAN_BOARD: FurnitureSeed = {
   type: "kanban_board",
-  x: 460,
-  y: -60,
+  x: 260,
+  y: 40,
   facing: 180,
+};
+
+const DEFAULT_PRESENTATION_SCREEN: FurnitureSeed = {
+  type: "presentation_screen",
+  x: 70,
+  y: 40,
+  w: 120,
+  h: 10,
+  facing: 0,
+};
+
+const DEFAULT_METRICS_BOARD: FurnitureSeed = {
+  type: "metrics_board",
+  x: 740,
+  y: 420,
+  w: 100,
+  h: 10,
+  facing: 0,
+};
+
+const DEFAULT_STANDUP_TABLE: FurnitureSeed = {
+  type: "round_table",
+  id: STANDUP_TABLE_ID,
+  x: 340,
+  y: 160,
+  r: 65,
 };
 
 const PREVIOUS_SERVER_ROOM_ITEMS_BOTTOM_RIGHT: FurnitureSeed[] = [
@@ -454,107 +481,149 @@ const DEFAULT_LOBBY_FURNITURE: FurnitureSeed[] = [
 ];
 
 const DEFAULT_FURNITURE: FurnitureSeed[] = [
-  { type: "round_table", x: 50, y: 50, r: 90 },
-  { type: "chair", x: 130, y: 50, facing: 0 },
-  { type: "chair", x: 200, y: 90, facing: 325 },
-  { type: "chair", x: 180, y: 170, facing: 240 },
-  { type: "chair", x: 120, y: 480, facing: 180 },
-  { type: "chair", x: 50, y: 150, facing: 105 },
-  { type: "chair", x: 60, y: 80, facing: 60 },
-  { type: "chair", x: 550, y: 50, facing: 0 },
-  { type: "bookshelf", x: 600, y: 30, w: 80, h: 120 },
-  { type: "couch", x: 270, y: 90, w: 40, h: 80, vertical: true, facing: 180 },
-  { type: "fridge", x: 1050, y: 20, w: 40, h: 80 },
-  { type: "stove", x: 920, y: 20 },
-  { type: "cabinet", x: 980, y: 30, w: 40, h: 40 },
-  { type: "microwave", x: 1030, y: 10, facing: 0 },
-  { type: "sink", x: 970, y: 20 },
-  { type: "dishwasher", x: 950, y: 20, w: 40, h: 40 },
-  { type: "cabinet", x: 840, y: 30, w: 80, h: 40, elevation: 0 },
-  { type: "coffee_machine", x: 880, y: 30, elevation: 0.56 },
-  { type: "wall_cabinet", x: 960, y: 10, w: 80, h: 20, elevation: 0.9 },
-  { type: "wall_cabinet", x: 880, y: 10, w: 80, h: 20, elevation: 0.9 },
-  { type: "round_table", x: 890, y: 100, r: 50 },
-  { type: "chair", x: 930, y: 100, facing: 0 },
-  { type: "chair", x: 930, y: 180, facing: 180 },
-  { type: "chair", x: 880, y: 130, facing: 90 },
-  { type: "chair", x: 970, y: 130, facing: 270 },
-  { type: "vending", x: 790, y: 10 },
-  { type: "trash", x: 210, y: 20 },
-  { type: "desk_cubicle", x: 100, y: 300, id: "desk_0" },
-  { type: "chair", x: 120, y: 290, facing: 180 },
-  { type: "computer", x: 120, y: 287 },
-  { type: "keyboard", x: 130, y: 295 },
-  { type: "mouse", x: 152, y: 295 },
-  { type: "trash", x: 170, y: 290 },
-  { type: "desk_cubicle", x: 300, y: 300, id: "desk_1" },
-  { type: "chair", x: 320, y: 290, facing: 180 },
-  { type: "computer", x: 320, y: 287 },
-  { type: "keyboard", x: 330, y: 295 },
-  { type: "mouse", x: 352, y: 295 },
-  { type: "trash", x: 370, y: 290 },
-  { type: "desk_cubicle", x: 500, y: 300, id: "desk_2" },
-  { type: "chair", x: 520, y: 290, facing: 180 },
-  { type: "computer", x: 520, y: 287 },
-  { type: "keyboard", x: 530, y: 295 },
-  { type: "mouse", x: 552, y: 295 },
-  { type: "trash", x: 570, y: 290 },
-  { type: "desk_cubicle", x: 700, y: 300, id: "desk_3" },
-  { type: "chair", x: 720, y: 290, facing: 180 },
-  { type: "computer", x: 720, y: 287 },
-  { type: "keyboard", x: 730, y: 295 },
-  { type: "mouse", x: 752, y: 295 },
-  { type: "trash", x: 770, y: 290 },
-  { type: "desk_cubicle", x: 100, y: 500, id: "desk_4" },
-  { type: "computer", x: 120, y: 487 },
-  { type: "keyboard", x: 130, y: 490 },
-  { type: "mouse", x: 152, y: 495 },
-  { type: "trash", x: 170, y: 490 },
-  { type: "desk_cubicle", x: 300, y: 500, id: "desk_5" },
-  { type: "chair", x: 310, y: 490, facing: 180 },
-  { type: "computer", x: 320, y: 487 },
-  { type: "keyboard", x: 330, y: 495 },
-  { type: "mouse", x: 352, y: 495 },
-  { type: "trash", x: 370, y: 500 },
-  { type: "desk_cubicle", x: 500, y: 500, id: "desk_6" },
-  { type: "chair", x: 520, y: 490, facing: 180 },
-  { type: "computer", x: 520, y: 487 },
-  { type: "keyboard", x: 530, y: 495 },
-  { type: "mouse", x: 552, y: 495 },
-  { type: "trash", x: 570, y: 490 },
-  { type: "desk_cubicle", x: 700, y: 500, id: "desk_7" },
-  { type: "chair", x: 720, y: 490, facing: 180 },
-  { type: "computer", x: 720, y: 487 },
-  { type: "keyboard", x: 730, y: 495 },
-  { type: "mouse", x: 752, y: 495 },
-  { type: "trash", x: 770, y: 490 },
-  { type: "couch", x: 1000, y: 380, w: 100, h: 40, facing: 90 },
-  { type: "couch", x: 390, y: 630, w: 100, h: 40 },
-  { type: "table_rect", x: 980, y: 380, w: 60, h: 30, facing: 270 },
-  { type: "pingpong", x: 950, y: 600, w: 100, h: 60 },
-  { type: "beanbag", x: 1000, y: 330, color: "#e65100", facing: 90 },
-  { type: "beanbag", x: 1000, y: 410, color: "#1565c0", facing: 90 },
-  DEFAULT_ATM_MACHINE,
-  DEFAULT_PHONE_BOOTH,
+  // ==========================================
+  // ROOM 1: STRATEGY & EXECUTIVE SUITE (Top-Left) - Lead Agent
+  // ==========================================
+  // Walls & Doorway (Wide 60-unit door)
+  { type: "wall", x: 40, y: 40, w: 480, h: WALL_THICKNESS },
+  { type: "wall", x: 40, y: 40, w: WALL_THICKNESS, h: 320 },
+  { type: "wall", x: 40, y: 360, w: 380, h: WALL_THICKNESS },
+  { type: "door", x: 420, y: 360, w: DOOR_LENGTH, h: DOOR_THICKNESS, facing: 0 },
+  { type: "wall", x: 480, y: 360, w: 40, h: WALL_THICKNESS },
+  { type: "wall", x: 520, y: 40, w: WALL_THICKNESS, h: 320 },
+  // Lead Workstation
+  { type: "desk_cubicle", x: 120, y: 220, id: "desk_0" },
+  { type: "chair", x: 140, y: 210, facing: 180 },
+  { type: "computer", x: 140, y: 207 },
+  { type: "keyboard", x: 150, y: 215 },
+  { type: "mouse", x: 172, y: 215 },
+  { type: "trash", x: 190, y: 210 },
+  // Standup Conference Table & Chairs
+  DEFAULT_STANDUP_TABLE,
+  { type: "chair", x: 375, y: 110, facing: 180 },
+  { type: "chair", x: 375, y: 220, facing: 0 },
+  { type: "chair", x: 290, y: 165, facing: 90 },
+  { type: "chair", x: 460, y: 165, facing: 270 },
+  // Tools, All-Hands Presentation Screen & Decor
   DEFAULT_KANBAN_BOARD,
-  { type: "whiteboard", x: 40, y: 200, w: 10, h: 60 },
-  { type: "clock", x: 550, y: 5 },
-  { type: "lamp", x: 430, y: 100 },
-  { type: "lamp", x: 980, y: 390 },
-  { type: "trash", x: 830, y: 20 },
-  { type: "plant", x: 40, y: 40 },
-  { type: "plant", x: 660, y: 30 },
-  { type: "plant", x: 340, y: 700 },
-  { type: "plant", x: 450, y: 450 },
-  { type: "plant", x: 1090, y: 310 },
-  { type: "plant", x: 1100, y: 490 },
-  { type: "plant", x: 530, y: 700 },
-  ...DEFAULT_SERVER_ROOM_ITEMS,
-  ...DEFAULT_GYM_ITEMS,
-  ...DEFAULT_QA_LAB_ITEMS,
-  ...DEFAULT_ART_ROOM_ITEMS,
+  DEFAULT_PRESENTATION_SCREEN,
+  { type: "whiteboard", x: 40, y: 120, w: 10, h: 60 },
+  { type: "plant", x: 60, y: 60 },
+
+  // ==========================================
+  // ROOM 2: DEV LAB & DATACENTER (Top-Right) - Build Agent
+  // ==========================================
+  // Walls & Doorway (Wide 60-unit door)
+  { type: "wall", x: 580, y: 40, w: 480, h: WALL_THICKNESS },
+  { type: "wall", x: 580, y: 40, w: WALL_THICKNESS, h: 320 },
+  { type: "wall", x: 580, y: 360, w: 40, h: WALL_THICKNESS },
+  { type: "door", x: 620, y: 360, w: DOOR_LENGTH, h: DOOR_THICKNESS, facing: 0 },
+  { type: "wall", x: 680, y: 360, w: 380, h: WALL_THICKNESS },
+  { type: "wall", x: 1060, y: 40, w: WALL_THICKNESS, h: 320 },
+  // Engineer Primary Workstation
+  { type: "desk_cubicle", x: 680, y: 220, id: "desk_1" },
+  { type: "chair", x: 700, y: 210, facing: 180 },
+  { type: "computer", x: 700, y: 207 },
+  { type: "keyboard", x: 710, y: 215 },
+  { type: "mouse", x: 732, y: 215 },
+  { type: "trash", x: 750, y: 210 },
+  // Auxiliary Engineer Hot-Desk (Desk 4)
+  { type: "desk_cubicle", x: 680, y: 100, id: "desk_4" },
+  { type: "chair", x: 700, y: 90, facing: 180 },
+  { type: "computer", x: 700, y: 87 },
+  { type: "keyboard", x: 710, y: 95 },
+  { type: "mouse", x: 732, y: 95 },
+  // Server Datacenter
+  { type: "server_rack", x: 880, y: 80, facing: 180 },
+  { type: "server_rack", x: 960, y: 80, facing: 180 },
+  { type: "server_terminal", x: 920, y: 160, facing: 0 },
+  { type: "bookshelf", x: 600, y: 50, w: 70, h: 100 },
+  { type: "plant", x: 1020, y: 60 },
+
+  // ==========================================
+  // ROOM 3: QA & TEST ENGINEERING SUITE (Bottom-Left) - QA Agent
+  // ==========================================
+  // Walls & Doorway (Wide 60-unit door)
+  { type: "wall", x: 40, y: 420, w: 380, h: WALL_THICKNESS },
+  { type: "door", x: 420, y: 420, w: DOOR_LENGTH, h: DOOR_THICKNESS, facing: 0 },
+  { type: "wall", x: 480, y: 420, w: 40, h: WALL_THICKNESS },
+  { type: "wall", x: 40, y: 420, w: WALL_THICKNESS, h: 280 },
+  { type: "wall", x: 40, y: 700, w: 480, h: WALL_THICKNESS },
+  { type: "wall", x: 520, y: 420, w: WALL_THICKNESS, h: 280 },
+  // QA Workstation
+  { type: "desk_cubicle", x: 120, y: 540, id: "desk_2" },
+  { type: "chair", x: 140, y: 530, facing: 180 },
+  { type: "computer", x: 140, y: 527 },
+  { type: "keyboard", x: 150, y: 535 },
+  { type: "mouse", x: 172, y: 535 },
+  { type: "trash", x: 190, y: 530 },
+  // QA Lab & Harness
+  { type: "qa_terminal", x: 360, y: 460, facing: 90 },
+  { type: "device_rack", x: 440, y: 460, facing: 180 },
+  { type: "device_rack", x: 440, y: 560, facing: 180 },
+  { type: "test_bench", x: 360, y: 600, facing: 90 },
+  { type: "plant", x: 60, y: 660 },
+
+  // ==========================================
+  // ROOM 4: GROWTH STUDIO & OPS (Bottom-Right) - Growth Agent
+  // ==========================================
+  // Walls & Doorway (Wide 60-unit door)
+  { type: "wall", x: 580, y: 420, w: 40, h: WALL_THICKNESS },
+  { type: "door", x: 620, y: 420, w: DOOR_LENGTH, h: DOOR_THICKNESS, facing: 0 },
+  { type: "wall", x: 680, y: 420, w: 380, h: WALL_THICKNESS },
+  { type: "wall", x: 580, y: 420, w: WALL_THICKNESS, h: 280 },
+  { type: "wall", x: 580, y: 700, w: 480, h: WALL_THICKNESS },
+  { type: "wall", x: 1060, y: 420, w: WALL_THICKNESS, h: 280 },
+  // Growth Primary Workstation
+  { type: "desk_cubicle", x: 680, y: 540, id: "desk_3" },
+  { type: "chair", x: 700, y: 530, facing: 180 },
+  { type: "computer", x: 700, y: 527 },
+  { type: "keyboard", x: 710, y: 535 },
+  { type: "mouse", x: 732, y: 535 },
+  { type: "trash", x: 750, y: 530 },
+  // Auxiliary Growth Hot-Desk (Desk 5)
+  { type: "desk_cubicle", x: 680, y: 640, id: "desk_5" },
+  { type: "chair", x: 700, y: 630, facing: 180 },
+  { type: "computer", x: 700, y: 627 },
+  { type: "keyboard", x: 710, y: 635 },
+  { type: "mouse", x: 732, y: 635 },
+  // FinOps & Ops Stations
+  DEFAULT_ATM_MACHINE,
+  DEFAULT_METRICS_BOARD,
+  { type: "whiteboard", x: 1050, y: 500, w: 10, h: 60 },
+  { type: "couch", x: 880, y: 620, w: 100, h: 40, facing: 0 },
+  { type: "table_rect", x: 900, y: 570, w: 60, h: 30 },
+  { type: "plant", x: 1020, y: 660 },
+
+  // ==========================================
+  // CENTRAL CORRIDOR & AMENITIES
+  // ==========================================
+  DEFAULT_PHONE_BOOTH,
   DEFAULT_SMS_BOOTH,
-  { type: "chair", x: 100, y: 200, facing: 180 },
+  { type: "clock", x: 540, y: 50 },
+
+  // ==========================================
+  // EAST WING: KITCHEN, LOUNGE & FITNESS
+  // ==========================================
+  // Kitchenette / Bar
+  { type: "fridge", x: 1140, y: 50, w: 40, h: 80 },
+  { type: "cabinet", x: 1200, y: 50, w: 80, h: 40, elevation: 0 },
+  { type: "coffee_machine", x: 1240, y: 50, elevation: 0.56 },
+  { type: "sink", x: 1300, y: 50 },
+  { type: "vending", x: 1370, y: 50 },
+  // Social & Gaming Lounge
+  DEFAULT_PINGPONG_TABLE,
+  DEFAULT_JUKEBOX,
+  { type: "couch", x: 1250, y: 520, w: 100, h: 40, facing: 0 },
+  { type: "couch", x: 1450, y: 520, w: 100, h: 40, facing: 0 },
+  { type: "beanbag", x: 1380, y: 460, color: "#1565c0", facing: 90 },
+  { type: "beanbag", x: 1420, y: 460, color: "#e65100", facing: 90 },
+  { type: "table_rect", x: 1350, y: 530, w: 60, h: 30 },
+  // Plants & Decor
+  { type: "plant", x: 1140, y: 650 },
+  { type: "plant", x: 1550, y: 50 },
+  { type: "plant", x: 1550, y: 650 },
+  ...DEFAULT_GYM_ITEMS,
 ];
 
 export const materializeDefaults = (
@@ -564,6 +633,30 @@ export const materializeDefaults = (
     ...item,
     _uid: `${preset}_${index}`,
   }));
+
+export const ensureOfficeStandupTableIdentifier = (
+  items: FurnitureItem[],
+  preset: OfficeLayoutPreset,
+): FurnitureItem[] => {
+  if (preset !== "office") return items;
+  if (
+    items.some(
+      (item) =>
+        item.type === "round_table" && item.id === STANDUP_TABLE_ID,
+    )
+  ) {
+    return items;
+  }
+
+  const legacyTableIndex = items.findIndex(
+    (item) => item.type === "round_table",
+  );
+  if (legacyTableIndex < 0) return items;
+
+  return items.map((item, index) =>
+    index === legacyTableIndex ? { ...item, id: STANDUP_TABLE_ID } : item,
+  );
+};
 
 export const isRetiredPingPongLamp = (item: FurnitureItem) =>
   item.type === "lamp" &&
@@ -646,6 +739,20 @@ export const ensureOfficeJukebox = (items: FurnitureItem[]): FurnitureItem[] => 
 export const ensureOfficeKanbanBoard = (items: FurnitureItem[]): FurnitureItem[] => {
   if (items.some((item) => item.type === "kanban_board")) return items;
   return [...items, { ...DEFAULT_KANBAN_BOARD, _uid: nextUid() }];
+};
+
+export const ensureOfficePresentationScreen = (
+  items: FurnitureItem[],
+): FurnitureItem[] => {
+  if (items.some((item) => item.type === "presentation_screen")) return items;
+  return [...items, { ...DEFAULT_PRESENTATION_SCREEN, _uid: nextUid() }];
+};
+
+export const ensureOfficeMetricsBoard = (
+  items: FurnitureItem[],
+): FurnitureItem[] => {
+  if (items.some((item) => item.type === "metrics_board")) return items;
+  return [...items, { ...DEFAULT_METRICS_BOARD, _uid: nextUid() }];
 };
 
 export const ensureOfficePhoneBooth = (

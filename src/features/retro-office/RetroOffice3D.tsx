@@ -13,6 +13,8 @@ import {
   Trash2,
   Users,
   X,
+  Download,
+  Upload,
 } from "lucide-react";
 import {
   type ComponentProps,
@@ -80,8 +82,10 @@ import {
   ensureOfficeAtm,
   ensureOfficeGymRoom,
   ensureOfficeKanbanBoard,
+  ensureOfficeMetricsBoard,
   ensureOfficePhoneBooth,
   ensureOfficePingPongTable,
+  ensureOfficePresentationScreen,
   ensureOfficeQaLab,
   ensureOfficeSmsBooth,
   ensureOfficeJukebox,
@@ -196,6 +200,8 @@ import {
   DeviceRackModel as InteractiveDeviceRackModel,
   DumbbellRackModel as InteractiveDumbbellRackModel,
   ExerciseBikeModel as InteractiveExerciseBikeModel,
+  InteractiveMetricsBoardModel,
+  InteractivePresentationScreenModel,
   KettlebellRackModel as InteractiveKettlebellRackModel,
   PingPongTableModel as MachinePingPongTableModel,
   PhoneBoothModel as InteractivePhoneBoothModel,
@@ -408,6 +414,18 @@ const PALETTE: PaletteEntry[] = [
   { type: "water_cooler", label: "Water", icon: "💧", defaults: {} },
   { type: "atm", label: "ATM", icon: "🏧", defaults: { facing: 270 } },
   { type: "jukebox", label: "Jukebox", icon: "🎵", defaults: { facing: 0 } },
+  {
+    type: "presentation_screen",
+    label: "Keynote Screen",
+    icon: "📽️",
+    defaults: { w: 120, h: 10, facing: 0 },
+  },
+  {
+    type: "metrics_board",
+    label: "Metrics Board",
+    icon: "📊",
+    defaults: { w: 100, h: 10, facing: 0 },
+  },
   {
     type: "kanban_board",
     label: "Kanban Board",
@@ -2524,16 +2542,20 @@ const buildInitialFurnitureLayout = (
   storageNamespace: string,
   layoutPreset: OfficeLayoutPreset,
 ): FurnitureItem[] =>
-  ensureOfficeKanbanBoard(
-    ensureOfficeJukebox(
-      ensureOfficeQaLab(
-        ensureOfficeGymRoom(
-          ensureOfficeServerRoom(
-            ensureOfficePhoneBooth(
-              ensureOfficeSmsBooth(
-                ensureOfficeAtm(
-                  ensureOfficePingPongTable(
-                    loadFurniture(storageNamespace) ?? materializeDefaults(layoutPreset),
+  ensureOfficeMetricsBoard(
+    ensureOfficePresentationScreen(
+      ensureOfficeKanbanBoard(
+        ensureOfficeJukebox(
+          ensureOfficeQaLab(
+            ensureOfficeGymRoom(
+              ensureOfficeServerRoom(
+                ensureOfficePhoneBooth(
+                  ensureOfficeSmsBooth(
+                    ensureOfficeAtm(
+                      ensureOfficePingPongTable(
+                        loadFurniture(storageNamespace) ?? materializeDefaults(layoutPreset),
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -2646,6 +2668,9 @@ export function RetroOffice3D({
   onTaskBoardSelectCard,
   onTaskBoardUpdateCard,
   onTaskBoardDeleteCard,
+  onTaskBoardLoadTaskDetail,
+  onTaskBoardAddTaskComment,
+  onTaskBoardReplyAndResumeTask,
   onTaskBoardRefreshCronJobs,
 }: {
   agents: OfficeAgent[];
@@ -2769,6 +2794,15 @@ export function RetroOffice3D({
     patch: Partial<TaskBoardCard>,
   ) => void;
   onTaskBoardDeleteCard?: (cardId: string) => void;
+  onTaskBoardLoadTaskDetail?: ComponentProps<
+    typeof KanbanImmersiveScreen
+  >["onLoadTaskDetail"];
+  onTaskBoardAddTaskComment?: ComponentProps<
+    typeof KanbanImmersiveScreen
+  >["onAddTaskComment"];
+  onTaskBoardReplyAndResumeTask?: ComponentProps<
+    typeof KanbanImmersiveScreen
+  >["onReplyAndResumeTask"];
   onTaskBoardRefreshCronJobs?: () => void;
 }) {
   const resolvedCleaningCues = animationState?.cleaningCues ?? cleaningCues;
@@ -3134,14 +3168,8 @@ export function RetroOffice3D({
     [CAM_POS, cameraTarget, cameraZoom]
   );
   const canvasResetKey = useMemo(
-    () =>
-      [
-        remoteOfficeEnabled ? "remote" : "local",
-        gatewayStatus ?? "unknown",
-        String(agents.length),
-        String(officeCenterSignal),
-      ].join(":"),
-    [agents.length, gatewayStatus, officeCenterSignal, remoteOfficeEnabled],
+    () => (remoteOfficeEnabled ? "remote" : "local"),
+    [remoteOfficeEnabled],
   );
   // New Idea 7: heatmap mode.
   const [heatmapMode, setHeatmapMode] = useState(false);
@@ -5476,6 +5504,59 @@ export function RetroOffice3D({
     setWallDrawStart(null);
   };
 
+  const handleExportLayout = () => {
+    try {
+      const data = {
+        version: "hermes3d-office-layout-v1",
+        exportedAt: new Date().toISOString(),
+        furniture,
+      };
+      const blob = new Blob([JSON.stringify(data, null, 2)], {
+        type: "application/json",
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `hermes3d-office-layout-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("Failed to export office layout", err);
+    }
+  };
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleImportLayout = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const raw = e.target?.result as string;
+        const parsed = JSON.parse(raw);
+        const importedFurniture = Array.isArray(parsed)
+          ? parsed
+          : Array.isArray(parsed?.furniture)
+            ? parsed.furniture
+            : null;
+        if (!importedFurniture || importedFurniture.length === 0) {
+          alert("Invalid layout file. Expected a JSON list of furniture items.");
+          return;
+        }
+        setFurniture(importedFurniture);
+        saveFurniture(importedFurniture, storageNamespace);
+        setSelectedUid(null);
+      } catch {
+        alert("Failed to parse JSON layout file.");
+      }
+    };
+    reader.readAsText(file);
+    event.target.value = "";
+  };
+
   const toggleEdit = () => {
     setEditMode((prev) => {
       if (prev) {
@@ -5737,9 +5818,13 @@ export function RetroOffice3D({
   }, [conversationGroups]);
 
   const lastOfficeCenterSignalRef = useRef(officeCenterSignal);
+  const isInitialMountRef = useRef(true);
 
   useEffect(() => {
-    cameraPresetRef.current = overviewPreset;
+    if (isInitialMountRef.current) {
+      isInitialMountRef.current = false;
+      cameraPresetRef.current = overviewPreset;
+    }
   }, [overviewPreset]);
 
   useEffect(() => {
@@ -5804,6 +5889,9 @@ export function RetroOffice3D({
               ref={orbitRef}
               target={cameraTarget}
               enabled={followAgentId === null && (!editMode || spaceDown)}
+              onStart={() => {
+                cameraPresetRef.current = null;
+              }}
               enableDamping
               dampingFactor={0.08}
               rotateSpeed={0.6}
@@ -5991,6 +6079,30 @@ export function RetroOffice3D({
                     onPointerDown={handleFurniturePointerDown}
                     onPointerOver={handleFurniturePointerOver}
                     onPointerOut={handleFurniturePointerOut}
+                  />
+                ) : item.type === "presentation_screen" ? (
+                  <InteractivePresentationScreenModel
+                    key={item._uid}
+                    item={item}
+                    isSelected={item._uid === selectedUid}
+                    isHovered={item._uid === hoverUid}
+                    editMode={editMode}
+                    onPointerDown={handleFurniturePointerDown}
+                    onPointerOver={handleFurniturePointerOver}
+                    onPointerOut={handleFurniturePointerOut}
+                    onClick={handleDeskClick}
+                  />
+                ) : item.type === "metrics_board" ? (
+                  <InteractiveMetricsBoardModel
+                    key={item._uid}
+                    item={item}
+                    isSelected={item._uid === selectedUid}
+                    isHovered={item._uid === hoverUid}
+                    editMode={editMode}
+                    onPointerDown={handleFurniturePointerDown}
+                    onPointerOver={handleFurniturePointerOver}
+                    onPointerOut={handleFurniturePointerOut}
+                    onClick={handleDeskClick}
                   />
                 ) : item.type === "atm" ? (
                   <InteractiveAtmMachineModel
@@ -6459,26 +6571,54 @@ export function RetroOffice3D({
               </button>
             ))}
           </div>
-          {standupMeeting ? (
+          {standupMeeting && standupMeeting.phase !== "complete" ? (
+            <div className="relative group">
+              <button
+                type="button"
+                onClick={() => setStandupBoardOpen(true)}
+                className="w-full rounded-xl border border-emerald-500/20 bg-[#0b1410]/90 px-3 py-2 text-left shadow-lg backdrop-blur-sm transition-colors hover:border-emerald-400/35 hover:bg-[#102017]/95"
+              >
+                <div className="font-mono text-[10px] uppercase tracking-[0.16em] text-emerald-200/80">
+                  Standup
+                </div>
+                <div className="mt-1 text-[11px] font-semibold text-white/90">
+                  {standupMeeting.phase === "gathering"
+                    ? "Gathering in meeting room."
+                    : `Speaking: ${standupSpeakerCard?.agentName ?? "Team"}`}
+                </div>
+                <div className="mt-1 font-mono text-[10px] text-white/50">
+                  {standupMeeting.arrivedAgentIds.length}/
+                  {standupMeeting.participantOrder.length} arrived
+                </div>
+              </button>
+              <button
+                type="button"
+                title="Dismiss / Cancel Standup"
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  await fetch("/api/office/standup/meeting", {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ action: "complete" }),
+                  });
+                  setStandupBoardOpen(false);
+                }}
+                className="absolute top-2 right-2 rounded p-1 text-white/40 hover:bg-rose-500/20 hover:text-rose-200 transition-colors"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ) : onStandupStartRequested ? (
             <button
               type="button"
-              onClick={() => setStandupBoardOpen(true)}
-              className="rounded-xl border border-emerald-500/20 bg-[#0b1410]/90 px-3 py-2 text-left shadow-lg backdrop-blur-sm transition-colors hover:border-emerald-400/35 hover:bg-[#102017]/95"
+              title="Start standup"
+              onClick={() => onStandupStartRequested?.()}
+              className="inline-flex items-center gap-2 rounded-xl border border-emerald-500/20 bg-[#0b1410]/90 px-3 py-2 text-left shadow-lg backdrop-blur-sm transition-colors hover:border-emerald-400/35 hover:bg-[#102017]/95"
             >
-              <div className="font-mono text-[10px] uppercase tracking-[0.16em] text-emerald-200/80">
-                Standup
-              </div>
-              <div className="mt-1 text-[11px] font-semibold text-white/90">
-                {standupMeeting.phase === "gathering"
-                  ? "Gathering in meeting room."
-                  : standupMeeting.phase === "in_progress"
-                    ? `Speaking: ${standupSpeakerCard?.agentName ?? "Team"}`
-                    : ""}
-              </div>
-              <div className="mt-1 font-mono text-[10px] text-white/50">
-                {standupMeeting.arrivedAgentIds.length}/
-                {standupMeeting.participantOrder.length} arrived
-              </div>
+              <Users className="h-3.5 w-3.5 text-emerald-300/80" />
+              <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-emerald-200/80">
+                Start standup
+              </span>
             </button>
           ) : null}
           {kanbanBoardItem ? (
@@ -6535,8 +6675,8 @@ export function RetroOffice3D({
                 const dotClass = isError
                   ? "bg-red-400"
                   : working
-                    ? "bg-green-400"
-                    : "bg-yellow-400";
+                    ? "bg-yellow-400"
+                    : "bg-green-400";
                 return (
                   <button
                     key={agent.id}
@@ -6628,8 +6768,8 @@ export function RetroOffice3D({
                   const dotClass = isError
                     ? "bg-red-400"
                     : working
-                      ? "bg-green-400"
-                      : "bg-yellow-400";
+                      ? "bg-yellow-400"
+                      : "bg-green-400";
                   const runCount = runCountByAgentId[agent.id] ?? 0;
                   return (
                     <div
@@ -6757,8 +6897,8 @@ export function RetroOffice3D({
                       isError
                         ? "bg-red-400"
                         : working
-                          ? "bg-green-400"
-                          : "bg-yellow-400"
+                          ? "bg-yellow-400"
+                          : "bg-green-400"
                     }`}
                   />
                 </div>
@@ -6787,8 +6927,8 @@ export function RetroOffice3D({
                     isError
                       ? "bg-red-900/40 text-red-400 ring-1 ring-red-800/40"
                       : working
-                        ? "bg-green-900/40 text-green-400 ring-1 ring-green-800/40"
-                        : "bg-yellow-900/30 text-yellow-500 ring-1 ring-yellow-800/30"
+                        ? "bg-yellow-900/30 text-yellow-500 ring-1 ring-yellow-800/30"
+                        : "bg-green-900/40 text-green-400 ring-1 ring-green-800/40"
                   }`}
                 >
                   {isError ? "error" : working ? "working" : "idle"}
@@ -6988,17 +7128,21 @@ export function RetroOffice3D({
           <div className="absolute inset-[5.7vh_5.7vw_8.7vh_5.7vw] rounded-[18px] border border-white/8 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]" />
           <div className="pointer-events-auto absolute inset-[5.8vh_5.8vw_8.8vh_5.8vw] overflow-hidden rounded-[16px] bg-black">
             {activeMonitor ? (
-              <MonitorImmersiveOverlay monitor={activeMonitor} />
+              <MonitorImmersiveOverlay
+                monitor={activeMonitor}
+                monitors={Object.values(monitorByAgentId)}
+                onAgentSelect={(agentId) => onMonitorSelect?.(agentId)}
+              />
             ) : null}
-            <div className="absolute inset-0 bg-gradient-to-br from-transparent via-transparent to-emerald-300/6" />
+            <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-transparent via-transparent to-emerald-300/6" />
             <div
-              className="absolute inset-0 opacity-[0.08]"
+              className="pointer-events-none absolute inset-0 opacity-[0.08]"
               style={{
                 backgroundImage:
                   "repeating-linear-gradient(to bottom, rgba(255,255,255,0.22) 0px, rgba(255,255,255,0.22) 1px, transparent 2px, transparent 4px)",
               }}
             />
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_45%,rgba(0,0,0,0.22)_100%)]" />
+            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_45%,rgba(0,0,0,0.22)_100%)]" />
           </div>
           <div className="absolute bottom-[3.1vh] left-1/2 h-[1.2vh] w-[12vw] -translate-x-1/2 rounded-full bg-[#0d0d0d] shadow-[0_0_0_1px_rgba(90,90,90,0.5)]" />
           <div className="absolute bottom-[1.1vh] left-1/2 h-[2vh] w-[20vw] -translate-x-1/2 rounded-[999px] bg-[#101010] shadow-[0_0_0_1px_rgba(82,82,82,0.5)]" />
@@ -7042,6 +7186,9 @@ export function RetroOffice3D({
             onTaskBoardUpdateCard?.(cardId, patch)
           }
           onDeleteCard={(cardId) => onTaskBoardDeleteCard?.(cardId)}
+          onLoadTaskDetail={onTaskBoardLoadTaskDetail}
+          onAddTaskComment={onTaskBoardAddTaskComment}
+          onReplyAndResumeTask={onTaskBoardReplyAndResumeTask}
           onRefreshCronJobs={() => onTaskBoardRefreshCronJobs?.()}
           onClose={() => setActiveKanbanUid(null)}
         />
@@ -7645,9 +7792,33 @@ export function RetroOffice3D({
               )}
               <button
                 onClick={handleReset}
-                className="px-3 py-1.5 rounded-md text-xs font-bold uppercase tracking-wider bg-[#2a1e14]/90 text-amber-400/60 border border-amber-800/20 hover:bg-[#3a2a1a] backdrop-blur-sm"
+                title="Reset office to default"
+                className="px-2.5 py-1.5 rounded-md text-xs font-bold uppercase tracking-wider bg-[#2a1e14]/90 text-amber-400/60 border border-amber-800/20 hover:bg-[#3a2a1a] backdrop-blur-sm"
               >
                 Reset
+              </button>
+              <button
+                onClick={handleExportLayout}
+                title="Export office layout JSON"
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-bold uppercase tracking-wider bg-[#1c2a20]/90 text-emerald-300 border border-emerald-800/30 hover:bg-[#25392b] backdrop-blur-sm"
+              >
+                <Download size={12} />
+                <span>Export</span>
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".json"
+                onChange={handleImportLayout}
+                className="hidden"
+              />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                title="Import office layout JSON"
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-bold uppercase tracking-wider bg-[#1a2530]/90 text-cyan-300 border border-cyan-800/30 hover:bg-[#223342] backdrop-blur-sm"
+              >
+                <Upload size={12} />
+                <span>Import</span>
               </button>
               {selectedUid && (
                 <button

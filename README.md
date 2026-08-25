@@ -256,6 +256,9 @@ Common environment variables:
 - `NEXT_PUBLIC_GATEWAY_URL` provides the default upstream gateway URL when Studio settings are empty. **Note:** this is a build-time variable — changes require `npm run build` to take effect.
 - `HERMES3D_GATEWAY_URL` and `HERMES3D_GATEWAY_TOKEN` provide a runtime alternative to `NEXT_PUBLIC_GATEWAY_URL` that takes effect on server restart without a rebuild.
 - `HERMES3D_GATEWAY_ADAPTER_TYPE` can pair with `HERMES3D_GATEWAY_URL` to mark those runtime defaults as `hermes`, `demo`, `local`, `hermes3d`, or `custom`.
+- `HERMES3D_FLEET_ROOT` enables generic managed-profile status from an external, private fleet source. Studio reads its generated `fleet-status.json`; private agent data does not belong in this repository.
+- `HERMES3D_FLEET_MUTATIONS=1` enables authenticated validate/preview/apply/rollback controls. Managed profiles reject direct Brain-file writes even when mutation controls are disabled.
+- `HERMES3D_AGENT_ALLOWLIST` limits the fleet visible through the Hermes Agent bridge; omit it for unmanaged installations.
 - If `HERMES3D_GATEWAY_URL` is not set, Studio can still surface local Hermes or demo adapter defaults from `HERMES_ADAPTER_PORT` / `DEMO_ADAPTER_PORT`.
 - `HERMES_API_URL` points the gateway adapter at the Hermes HTTP API. It defaults to `http://localhost:8642`.
 - Hermes file defaults come from `~/.hermes/hermes.json` when present.
@@ -315,6 +318,45 @@ If the UI loads but Connect fails, the problem is usually on the Studio -> Gatew
 - Helpful proxy error codes include `studio.gateway_url_missing`, `studio.gateway_token_missing`, `studio.upstream_error`, and `studio.upstream_closed`.
 
 Marketplace skill installs now use a gateway-native workspace flow and do not require enabling SSH on the user machine.
+
+### Native task-manager, project worktrees, and pull requests
+
+The packaged `task-manager` skill uses Hermes' native SQLite-backed Kanban. It
+does not create a separate `tasks.json`; the Marketplace skill, Standup handoff,
+HQ Kanban, dispatcher, and desk monitor all read the same board.
+
+Repository work needs a Hermes project (or a board default workdir), otherwise
+the dispatcher correctly falls back to an empty scratch workspace and cannot
+produce a branch or pull request. Bind the board once on the gateway host:
+
+```powershell
+hermes project create "My project" --slug my-project --primary C:\path\to\clean\repo --board default --use
+```
+
+Keep that primary checkout clean and on the branch new task branches should use
+as their base. New board tasks then receive deterministic, isolated worktrees
+and branches automatically.
+
+Standup-generated tasks run in bounded goal mode and carry an explicit delivery
+contract. A worker that changes repository files must test, commit, and call
+`kanban_request_review`; it must not mark code done before review. The stock
+worker container intentionally has neither the host's GitHub credentials nor a
+`gh` installation. For tasks containing the explicit
+`[hermes3d:github-pr]` marker, Hermes3D performs the credentialed step on the
+host when the task enters `review`: it validates that the assigned worktree is
+clean, pushes the task branch without force, opens or reuses the PR with the
+host's authenticated `gh`, and writes the PR URL back to the card.
+
+Host requirements:
+
+- `git` and `gh` are installed and `gh auth status` succeeds;
+- the task worktree is beneath `HERMES3D_PR_WORKSPACE_ROOT` when set, or beneath
+  the parent of the Hermes3D server working directory by default;
+- the task is project/worktree-backed, is on its recorded non-default branch,
+  has no uncommitted changes, and explicitly contains the PR marker.
+
+GitHub delivery is never triggered by an ordinary/manual card without the
+marker, and it never force-pushes.
 
 ### Spotify auth on localhost
 

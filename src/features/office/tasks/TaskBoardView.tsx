@@ -5,12 +5,20 @@
 // the agent's fingerprints: source platform, model, skills used or learned,
 // subagents spawned, and cron schedules.
 
-import type { DragEvent, KeyboardEvent as ReactKeyboardEvent } from "react";
+import {
+  useEffect,
+  useState,
+  type DragEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from "react";
 import {
   AlarmClock,
+  AlertTriangle,
   BrainCircuit,
   Inbox,
   Loader2,
+  MessageSquare,
+  PlayCircle,
   Plus,
   RefreshCw,
   ShieldAlert,
@@ -22,6 +30,10 @@ import {
 import type { AgentState } from "@/features/agents/state/store";
 import type { CronJobSummary } from "@/lib/cron/types";
 import type { TaskBoardCard, TaskBoardStatus } from "@/features/office/tasks/types";
+import {
+  isKanbanManagedTaskId,
+  type GatewayTaskDetailResult,
+} from "@/lib/tasks/gateway";
 
 const STATUS_ORDER: TaskBoardStatus[] = [
   "inbox",
@@ -63,7 +75,7 @@ const STATUS_META: Record<
   },
   working: {
     label: "Working",
-    hint: "Agent executing",
+    hint: "Workers and tracked work",
     icon: Loader2,
     headerClass: "text-amber-200/90",
     countClass: "bg-amber-400/15 text-amber-100",
@@ -99,6 +111,26 @@ const PLATFORM_LABELS: Record<string, string> = {
   email: "Email",
   cli: "CLI",
   web: "Web",
+};
+
+const BLOCK_KIND_LABELS: Record<string, string> = {
+  needs_input: "Human input required",
+  capability: "Capability missing",
+  dependency: "Waiting on dependency",
+  transient: "Transient failure",
+};
+
+const formatNativeStatus = (value: string | null | undefined) => {
+  const normalized = value?.trim().toLowerCase() ?? "";
+  if (!normalized) return "Hermes task";
+  if (normalized === "review") return "Waiting for review";
+  if (normalized === "blocked") return "Blocked";
+  return normalized.replaceAll("_", " ");
+};
+
+const formatBlockKind = (value: string | null | undefined) => {
+  const normalized = value?.trim().toLowerCase() ?? "";
+  return BLOCK_KIND_LABELS[normalized] ?? normalized.replaceAll("_", " ");
 };
 
 const formatPlatform = (channel: string | null) => {
@@ -175,6 +207,9 @@ export function TaskBoardView({
   onSelectCard,
   onUpdateCard,
   onDeleteCard,
+  onLoadTaskDetail,
+  onAddTaskComment,
+  onReplyAndResumeTask,
   onRefreshCronJobs,
 }: {
   title: string;
@@ -205,15 +240,104 @@ export function TaskBoardView({
   onSelectCard: (cardId: string | null) => void;
   onUpdateCard: (cardId: string, patch: Partial<TaskBoardCard>) => void;
   onDeleteCard: (cardId: string) => void;
+  onLoadTaskDetail?: (cardId: string) => Promise<GatewayTaskDetailResult>;
+  onAddTaskComment?: (
+    cardId: string,
+    body: string,
+  ) => Promise<GatewayTaskDetailResult>;
+  onReplyAndResumeTask?: (
+    cardId: string,
+    reply: string,
+  ) => Promise<GatewayTaskDetailResult>;
   onRefreshCronJobs: () => void;
 }) {
   const workingCount = cardsByStatus.working.length;
+  const activeWorkerCount = cardsByStatus.working.filter((card) =>
+    isKanbanManagedTaskId(card.id),
+  ).length;
+  const trackedWorkingCount = workingCount - activeWorkerCount;
   const attentionCount = cardsByStatus.needs_attention.length;
   const learnedCount = STATUS_ORDER.reduce(
     (total, status) =>
       total + cardsByStatus[status].filter((card) => card.learnedSkill).length,
     0,
   );
+  const selectedCardId = selectedCard?.id ?? null;
+  const selectedKanbanTask = Boolean(
+    selectedCardId && isKanbanManagedTaskId(selectedCardId),
+  );
+  const [taskDetail, setTaskDetail] = useState<GatewayTaskDetailResult | null>(null);
+  const [taskDetailLoading, setTaskDetailLoading] = useState(false);
+  const [taskActionBusy, setTaskActionBusy] = useState(false);
+  const [taskActionError, setTaskActionError] = useState<string | null>(null);
+  const [taskActionMessage, setTaskActionMessage] = useState<string | null>(null);
+  const [replyText, setReplyText] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    setTaskDetail(null);
+    setTaskActionError(null);
+    setTaskActionMessage(null);
+    setReplyText("");
+    if (!selectedCardId || !selectedKanbanTask || !onLoadTaskDetail) {
+      setTaskDetailLoading(false);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    setTaskDetailLoading(true);
+    void onLoadTaskDetail(selectedCardId)
+      .then((detail) => {
+        if (!cancelled) setTaskDetail(detail);
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setTaskActionError(
+            error instanceof Error ? error.message : "Failed to load Hermes task details.",
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setTaskDetailLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [onLoadTaskDetail, selectedCardId, selectedKanbanTask]);
+
+  const submitTaskComment = async (resume: boolean) => {
+    if (!selectedCard || !replyText.trim() || taskActionBusy) return;
+    const handler = resume ? onReplyAndResumeTask : onAddTaskComment;
+    if (!handler) return;
+    setTaskActionBusy(true);
+    setTaskActionError(null);
+    setTaskActionMessage(null);
+    try {
+      const detail = await handler(selectedCard.id, replyText.trim());
+      setTaskDetail(detail);
+      setReplyText("");
+      setTaskActionMessage(
+        resume
+          ? detail.dispatchWarning || "Reply sent. The task is ready for a Hermes worker."
+          : "Comment added to the Hermes task.",
+      );
+    } catch (error) {
+      setTaskActionError(
+        error instanceof Error ? error.message : "The Hermes task could not be updated.",
+      );
+    } finally {
+      setTaskActionBusy(false);
+    }
+  };
+
+  const selectedNativeStatus =
+    taskDetail?.nativeStatus ?? selectedCard?.nativeStatus ?? null;
+  const selectedBlockKind = taskDetail?.blockKind ?? selectedCard?.blockKind ?? null;
+  const selectedBlockerReason =
+    taskDetail?.blockerReason ?? selectedCard?.blockerReason ?? null;
+  const selectedTaskIsBlocked = selectedNativeStatus === "blocked";
 
   return (
     <section className="flex h-full min-h-0 flex-col bg-transparent text-white">
@@ -226,7 +350,15 @@ export function TaskBoardView({
             </div>
             <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11px] text-white/40">
               <span>{subtitle}</span>
-              <span className="text-amber-200/70">{workingCount} working</span>
+              <span className="text-amber-200/70">
+                {activeWorkerCount} Hermes {activeWorkerCount === 1 ? "worker" : "workers"} active
+              </span>
+              {trackedWorkingCount > 0 ? (
+                <span className="text-white/35">
+                  {trackedWorkingCount} tracked {trackedWorkingCount === 1 ? "card" : "cards"} marked
+                  working
+                </span>
+              ) : null}
               {attentionCount > 0 ? (
                 <span className="text-rose-300/80">{attentionCount} need attention</span>
               ) : null}
@@ -296,7 +428,7 @@ export function TaskBoardView({
       </div>
 
       <div
-        className={`grid min-h-0 flex-1 overflow-hidden ${selectedCard ? "grid-cols-[minmax(0,1fr)_300px]" : "grid-cols-1"}`}
+        className={`grid min-h-0 flex-1 overflow-hidden ${selectedCard ? "grid-cols-[minmax(0,1fr)_360px]" : "grid-cols-1"}`}
       >
         <div className="min-h-0 overflow-auto px-4 py-4">
           <div className="grid min-w-[760px] grid-cols-5 gap-3">
@@ -397,6 +529,18 @@ export function TaskBoardView({
                               </div>
                             ) : null}
                             <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                              {card.nativeStatus === "blocked" ? (
+                                <CardChip
+                                  icon={AlertTriangle}
+                                  className="border-rose-400/30 bg-rose-400/10 text-rose-100"
+                                >
+                                  {formatBlockKind(card.blockKind) || "Blocked"}
+                                </CardChip>
+                              ) : card.nativeStatus === "review" ? (
+                                <CardChip className="border-cyan-400/30 bg-cyan-400/10 text-cyan-100">
+                                  Waiting for review
+                                </CardChip>
+                              ) : null}
                               {platform ? <CardChip>{platform}</CardChip> : null}
                               {card.model ? (
                                 <CardChip
@@ -465,6 +609,132 @@ export function TaskBoardView({
               </button>
             </div>
             <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4">
+              {selectedKanbanTask ? (
+                <section className="space-y-3 rounded-lg border border-cyan-400/20 bg-cyan-400/[0.05] p-3">
+                  <div className="flex items-start gap-2">
+                    {selectedTaskIsBlocked ? (
+                      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rose-300" />
+                    ) : (
+                      <MessageSquare className="mt-0.5 h-4 w-4 shrink-0 text-cyan-300" />
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-cyan-100/65">
+                        Hermes status
+                      </div>
+                      <div className="mt-1 text-sm font-semibold text-white">
+                        {formatNativeStatus(selectedNativeStatus)}
+                      </div>
+                      {selectedBlockKind ? (
+                        <div className="mt-1 font-mono text-[10px] uppercase tracking-[0.12em] text-rose-200/80">
+                          {formatBlockKind(selectedBlockKind)}
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  {selectedBlockerReason ? (
+                    <div className="rounded border border-rose-400/20 bg-rose-500/[0.08] px-3 py-2 text-[12px] leading-5 text-rose-50/90">
+                      {selectedBlockerReason}
+                    </div>
+                  ) : null}
+
+                  {taskDetailLoading ? (
+                    <div className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.12em] text-white/45">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      Loading task conversation
+                    </div>
+                  ) : null}
+
+                  {taskDetail?.comments.length ? (
+                    <div className="space-y-2">
+                      <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-white/40">
+                        Task conversation
+                      </div>
+                      <div className="max-h-48 space-y-2 overflow-y-auto pr-1">
+                        {taskDetail.comments.slice(-8).map((comment) => (
+                          <div
+                            key={comment.id}
+                            className="rounded border border-white/8 bg-black/25 px-2.5 py-2"
+                          >
+                            <div className="flex items-center justify-between gap-2 font-mono text-[9px] uppercase tracking-[0.1em] text-white/35">
+                              <span className="truncate">{comment.author}</span>
+                              <span>
+                                {comment.createdAt
+                                  ? new Date(comment.createdAt).toLocaleString()
+                                  : ""}
+                              </span>
+                            </div>
+                            <div className="mt-1 whitespace-pre-wrap text-[12px] leading-5 text-white/75">
+                              {comment.body}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {onAddTaskComment || onReplyAndResumeTask ? (
+                    <div className="space-y-2">
+                      <label className="flex flex-col gap-1">
+                        <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-white/45">
+                          Your reply to Hermes
+                        </span>
+                        <textarea
+                          rows={3}
+                          value={replyText}
+                          onChange={(event) => setReplyText(event.target.value)}
+                          placeholder={
+                            selectedTaskIsBlocked
+                              ? "Give the decision or missing information…"
+                              : "Add context for the next worker run…"
+                          }
+                          className="rounded border border-white/10 bg-black/40 px-3 py-2 text-sm text-white outline-none placeholder:text-white/25 focus:border-cyan-400/35"
+                        />
+                      </label>
+                      <div className="flex flex-wrap gap-2">
+                        {onAddTaskComment ? (
+                          <button
+                            type="button"
+                            disabled={!replyText.trim() || taskActionBusy}
+                            onClick={() => void submitTaskComment(false)}
+                            className="inline-flex items-center gap-1.5 rounded border border-white/15 bg-white/[0.05] px-2.5 py-2 font-mono text-[10px] uppercase tracking-[0.12em] text-white/65 transition hover:border-white/30 hover:text-white disabled:cursor-not-allowed disabled:opacity-35"
+                          >
+                            <MessageSquare className="h-3.5 w-3.5" />
+                            Add comment
+                          </button>
+                        ) : null}
+                        {selectedTaskIsBlocked && onReplyAndResumeTask ? (
+                          <button
+                            type="button"
+                            disabled={!replyText.trim() || taskActionBusy}
+                            onClick={() => void submitTaskComment(true)}
+                            className="inline-flex items-center gap-1.5 rounded border border-emerald-400/30 bg-emerald-400/10 px-2.5 py-2 font-mono text-[10px] uppercase tracking-[0.12em] text-emerald-100 transition hover:border-emerald-300/50 hover:bg-emerald-400/15 disabled:cursor-not-allowed disabled:opacity-35"
+                          >
+                            {taskActionBusy ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <PlayCircle className="h-3.5 w-3.5" />
+                            )}
+                            Reply &amp; Resume
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {taskActionError ? (
+                    <div className="rounded border border-rose-400/25 bg-rose-500/10 px-2.5 py-2 text-[11px] leading-5 text-rose-100">
+                      {taskActionError}
+                    </div>
+                  ) : null}
+                  {taskActionMessage ? (
+                    <div className="rounded border border-emerald-400/20 bg-emerald-400/[0.08] px-2.5 py-2 text-[11px] leading-5 text-emerald-100">
+                      {taskActionMessage}
+                    </div>
+                  ) : null}
+                </section>
+              ) : null}
+
               <label className="flex flex-col gap-1">
                 <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-white/35">
                   Title

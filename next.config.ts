@@ -14,13 +14,15 @@ const securityHeaders = [
       "style-src 'self' 'unsafe-inline' https:",
       // 'unsafe-eval' is required by Next.js dev mode (source maps, HMR).
       // In production it is dropped — React and Three.js do not need eval.
-      ...(process.env.NODE_ENV !== "production"
-        ? ["script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:"]
-        : ["script-src 'self' 'unsafe-inline' blob:"]),
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob:",
       // connect-src is intentionally broad: gateway URLs are user-configured
       // at runtime and cannot be enumerated at build time.
       // Restrict further when a fixed deployment target is known.
-      "connect-src 'self' ws: wss: http: https:",
+      // blob: is required by GLTFLoader — it resolves textures packed inside a
+      // .glb through fetch() on an object URL the page itself minted, which
+      // connect-src governs (img-src does not cover it). Without it every
+      // custom agent avatar loads untextured.
+      "connect-src 'self' blob: ws: wss: http: https:",
       "media-src 'self' blob: data: http: https:",
       "worker-src 'self' blob:",
       "object-src 'none'",

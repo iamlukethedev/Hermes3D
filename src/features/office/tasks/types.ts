@@ -62,6 +62,11 @@ export type TaskBoardCard = {
   scheduledFor: string | null;
   /** True when the learning loop distilled this task into a new skill. */
   learnedSkill: boolean;
+  /** Native Hermes lifecycle state before office-column collapsing. */
+  nativeStatus?: string | null;
+  /** Typed reason category supplied by the Hermes worker. */
+  blockKind?: string | null;
+  blockerReason?: string | null;
 };
 
 export type TaskBoardPreference = {

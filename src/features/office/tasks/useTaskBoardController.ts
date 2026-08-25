@@ -24,6 +24,8 @@ import {
 } from "@/features/office/tasks/types";
 import type { RunRecord } from "@/features/office/hooks/useRunLog";
 import { type OfficeStandupController } from "@/features/office/hooks/useOfficeStandupController";
+import { buildStandupTaskCandidates } from "@/features/office/tasks/standupDispatch";
+import type { StandupMeeting } from "@/lib/office/standup/types";
 import { extractText, isHeartbeatPrompt } from "@/lib/text/message-extract";
 import {
   formatCronPayload,
@@ -43,13 +45,20 @@ import {
 } from "@/lib/studio/settings";
 import type { StudioSettingsCoordinator } from "@/lib/studio/coordinator";
 import {
+  commentGatewayTask,
+  createGatewayTask,
+  dispatchGatewayTasks,
+  getGatewayTaskDetail,
   isKanbanManagedTaskId,
   isUnsupportedTaskGatewayError,
   listGatewayTasks,
+  replyAndResumeGatewayTask,
   updateGatewayTask,
+  type GatewayTaskDetailResult,
   type GatewayTaskRecord,
   type GatewayTaskUpdateInput,
 } from "@/lib/tasks/gateway";
+import { fetchJson } from "@/lib/http";
 import {
   archiveSharedTaskRecord,
   listSharedTaskRecords,
@@ -173,6 +182,9 @@ const makeCard = (
     subagentCount: input.subagentCount ?? 0,
     scheduledFor: input.scheduledFor ?? null,
     learnedSkill: input.learnedSkill ?? false,
+    nativeStatus: input.nativeStatus ?? null,
+    blockKind: input.blockKind ?? null,
+    blockerReason: input.blockerReason ?? null,
   };
 };
 
@@ -291,6 +303,9 @@ const buildCardFromGatewayTask = (
     notes: task.notes ?? existing?.notes ?? [],
     isArchived: task.archived ?? existing?.isArchived ?? false,
     isInferred: false,
+    nativeStatus: task.nativeStatus ?? existing?.nativeStatus ?? null,
+    blockKind: task.blockKind ?? existing?.blockKind ?? null,
+    blockerReason: task.blockerReason ?? existing?.blockerReason ?? null,
   });
 
 const buildCardFromSharedTaskRecord = (
@@ -529,6 +544,53 @@ const compareDuplicatePriority = (
   return Date.parse(right.updatedAt) - Date.parse(left.updatedAt);
 };
 
+export const shouldDispatchCompletedStandup = (
+  previous: { id: string; phase: string } | null,
+  meeting: Pick<StandupMeeting, "id" | "phase" | "taskDispatch">,
+) =>
+  meeting.phase === "complete" &&
+  meeting.taskDispatch?.status !== "dispatched" &&
+  previous?.id === meeting.id &&
+  previous.phase !== "complete";
+
+/**
+ * Only locally mirrored Hermes events need title-based de-duplication.
+ * Backend Kanban cards already have stable ids and idempotency keys; treating
+ * a fresh standup card as a duplicate of an older completed card archives the
+ * real backend task while its worker is starting.
+ */
+export const findDuplicateMirroredTaskCardIds = (
+  cards: TaskBoardCard[],
+): string[] => {
+  const grouped = new Map<string, TaskBoardCard[]>();
+  for (const card of cards) {
+    if (
+      card.isArchived ||
+      card.source !== "hermes_event" ||
+      isKanbanManagedTaskId(card.id)
+    ) {
+      continue;
+    }
+    const titleKey = normalizeTaskRequestText(card.title).toLowerCase();
+    if (!titleKey) continue;
+    const groupKey = `${card.assignedAgentId ?? "-"}:${card.externalThreadId ?? "-"}:${titleKey}`;
+    const matches = grouped.get(groupKey);
+    if (matches) {
+      matches.push(card);
+    } else {
+      grouped.set(groupKey, [card]);
+    }
+  }
+
+  const duplicateIds: string[] = [];
+  for (const matches of grouped.values()) {
+    if (matches.length <= 1) continue;
+    const sorted = [...matches].sort(compareDuplicatePriority);
+    duplicateIds.push(...sorted.slice(1).map((card) => card.id));
+  }
+  return duplicateIds;
+};
+
 const buildPlaybookCards = (
   jobs: CronJobSummary[],
   existingCards: TaskBoardCard[],
@@ -675,6 +737,7 @@ export const useTaskBoardController = ({
     defaultTaskBoardPreference(),
   );
   const stateRef = useRef(state);
+  const refreshStandupMeeting = standup.refreshMeeting;
   const hydratedRef = useRef(false);
   const recoveredAgentRequestKeyRef = useRef<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
@@ -703,6 +766,11 @@ export const useTaskBoardController = ({
   >("unknown");
   const sharedRefreshInFlightRef = useRef(false);
   const lastPersistedTaskBoardSnapshotRef = useRef<string | null>(null);
+  const observedStandupMeetingRef = useRef<{
+    id: string;
+    phase: string;
+  } | null>(null);
+  const dispatchingStandupMeetingIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     stateRef.current = state;
@@ -946,6 +1014,23 @@ export const useTaskBoardController = ({
     }
   }, [applyGatewayTaskRecord, client, status]);
 
+  const saveStandupTaskDispatch = useCallback(
+    async (taskDispatch: {
+      status: "pending" | "queueing" | "dispatched" | "failed";
+      queuedAgentIds: string[];
+      blockedAgentIds: string[];
+      error: string | null;
+    }) => {
+      await fetchJson("/api/office/standup/meeting", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "task_dispatch", taskDispatch }),
+      });
+      await refreshStandupMeeting();
+    },
+    [refreshStandupMeeting],
+  );
+
   useEffect(() => {
     void refreshCronJobs();
   }, [refreshCronJobs]);
@@ -966,6 +1051,145 @@ export const useTaskBoardController = ({
   useEffect(() => {
     void refreshRemoteTasks();
   }, [refreshRemoteTasks]);
+
+  useEffect(() => {
+    const meeting = standup.meeting;
+    if (!meeting) {
+      observedStandupMeetingRef.current = null;
+      return;
+    }
+    if (meeting.phase !== "complete") {
+      observedStandupMeetingRef.current = {
+        id: meeting.id,
+        phase: meeting.phase,
+      };
+      return;
+    }
+
+    const previous = observedStandupMeetingRef.current;
+    const reachedCompletionHere = shouldDispatchCompletedStandup(previous, meeting);
+    if (!reachedCompletionHere) {
+      // A restart is a read-only reconnection. Never replay an old pending or
+      // failed handoff merely because the browser mounted again; an operator
+      // must explicitly retry it from the durable Kanban state.
+      observedStandupMeetingRef.current = { id: meeting.id, phase: meeting.phase };
+      return;
+    }
+    if (meeting.taskDispatch?.status === "dispatched") {
+      observedStandupMeetingRef.current = { id: meeting.id, phase: meeting.phase };
+      return;
+    }
+    // Preserve the active-phase observation until the gateway reconnects so a
+    // brief disconnect at the end of standup does not lose the handoff.
+    if (status !== "connected") return;
+    if (dispatchingStandupMeetingIdRef.current === meeting.id) return;
+
+    observedStandupMeetingRef.current = { id: meeting.id, phase: meeting.phase };
+    dispatchingStandupMeetingIdRef.current = meeting.id;
+    void (async () => {
+      const queuedAgentIds: string[] = [];
+      const blockedAgentIds: string[] = [];
+      const errors: string[] = [];
+      try {
+        await saveStandupTaskDispatch({
+          status: "queueing",
+          queuedAgentIds,
+          blockedAgentIds,
+          error: null,
+        });
+        const candidates = buildStandupTaskCandidates(meeting);
+        for (const candidate of candidates) {
+          const existingCard = stateRef.current.cards.find(
+            (c) =>
+              !c.isArchived &&
+              c.status !== "done" &&
+              c.assignedAgentId === candidate.agentId &&
+              c.sourceEventId === candidate.input.sourceEventId,
+          );
+          if (existingCard) {
+            try {
+              const updated = await updateGatewayTask(client, existingCard.id, {
+                description: candidate.input.description,
+                status: candidate.input.status,
+              });
+              applyGatewayTaskRecord(updated);
+              queuedAgentIds.push(candidate.agentId);
+              if (candidate.blocked) blockedAgentIds.push(candidate.agentId);
+            } catch (error) {
+              errors.push(
+                `${candidate.agentId}: ${
+                  error instanceof Error ? error.message : "Task update failed."
+                }`,
+              );
+              queuedAgentIds.push(candidate.agentId);
+              if (candidate.blocked) blockedAgentIds.push(candidate.agentId);
+            }
+            continue;
+          }
+          try {
+            const task = await createGatewayTask(client, candidate.input);
+            applyGatewayTaskRecord(task);
+            queuedAgentIds.push(candidate.agentId);
+            if (candidate.blocked) blockedAgentIds.push(candidate.agentId);
+          } catch (error) {
+            errors.push(
+              `${candidate.agentId}: ${
+                error instanceof Error ? error.message : "Task creation failed."
+              }`,
+            );
+          }
+        }
+
+        const runnableCount = queuedAgentIds.length - blockedAgentIds.length;
+        if (runnableCount > 0) {
+          try {
+            await dispatchGatewayTasks(client, { max: runnableCount });
+          } catch (error) {
+            errors.push(
+              error instanceof Error
+                ? `Dispatcher: ${error.message}`
+                : "Dispatcher could not be started.",
+            );
+          }
+        }
+        await saveStandupTaskDispatch({
+          status: errors.length > 0 ? "failed" : "dispatched",
+          queuedAgentIds,
+          blockedAgentIds,
+          error: errors.length > 0 ? errors.join(" ") : null,
+        });
+        await refreshRemoteTasks();
+      } catch (error) {
+        setGatewayTasksError(
+          error instanceof Error
+            ? error.message
+            : "Failed to dispatch standup tasks.",
+        );
+        try {
+          await saveStandupTaskDispatch({
+            status: "failed",
+            queuedAgentIds,
+            blockedAgentIds,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Failed to dispatch standup tasks.",
+          });
+        } catch {}
+      } finally {
+        if (dispatchingStandupMeetingIdRef.current === meeting.id) {
+          dispatchingStandupMeetingIdRef.current = null;
+        }
+      }
+    })();
+  }, [
+    applyGatewayTaskRecord,
+    client,
+    refreshRemoteTasks,
+    saveStandupTaskDispatch,
+    standup.meeting,
+    status,
+  ]);
 
   // Backend-managed boards (hermes kanban) change from outside this client —
   // workers claim tasks, the dispatcher completes them — so keep polling while
@@ -1107,6 +1331,32 @@ export const useTaskBoardController = ({
     [applyGatewayTaskRecord, client],
   );
 
+  const loadTaskDetail = useCallback(
+    async (cardId: string): Promise<GatewayTaskDetailResult> => {
+      return getGatewayTaskDetail(client, cardId);
+    },
+    [client],
+  );
+
+  const addTaskComment = useCallback(
+    async (cardId: string, body: string): Promise<GatewayTaskDetailResult> => {
+      return commentGatewayTask(client, { id: cardId, body });
+    },
+    [client],
+  );
+
+  const replyAndResumeTask = useCallback(
+    async (cardId: string, reply: string): Promise<GatewayTaskDetailResult> => {
+      const detail = await replyAndResumeGatewayTask(client, {
+        id: cardId,
+        reply,
+      });
+      await refreshRemoteTasks();
+      return detail;
+    },
+    [client, refreshRemoteTasks],
+  );
+
   const updateCard = useCallback(
     async (cardId: string, patch: Partial<TaskBoardCard>) => {
       const existing =
@@ -1233,7 +1483,12 @@ export const useTaskBoardController = ({
     // effect re-runs → "Maximum update depth exceeded" in dev mode.
     const snapshot = JSON.stringify(
       stateRef.current.cards
-        .filter((card) => !card.isArchived && card.source === "hermes_event")
+        .filter(
+          (card) =>
+            !card.isArchived &&
+            card.source === "hermes_event" &&
+            !isKanbanManagedTaskId(card.id),
+        )
         .map((card) => ({
           id: card.id,
           title: card.title,
@@ -1243,30 +1498,13 @@ export const useTaskBoardController = ({
     );
     if (lastDedupeSnapshotRef.current === snapshot) return;
     lastDedupeSnapshotRef.current = snapshot;
-    const grouped = new Map<string, TaskBoardCard[]>();
-    for (const card of stateRef.current.cards) {
-      if (card.isArchived || card.source !== "hermes_event") continue;
-      const titleKey = normalizeTaskRequestText(card.title).toLowerCase();
-      if (!titleKey) continue;
-      const groupKey = `${card.assignedAgentId ?? "-"}:${card.externalThreadId ?? "-"}:${titleKey}`;
-      const cards = grouped.get(groupKey);
-      if (cards) {
-        cards.push(card);
-      } else {
-        grouped.set(groupKey, [card]);
-      }
-    }
-    for (const cards of grouped.values()) {
-      if (cards.length <= 1) continue;
-      const sorted = [...cards].sort(compareDuplicatePriority);
-      const keeper = sorted[0];
-      for (const duplicate of sorted.slice(1)) {
-        if (duplicate.id === keeper.id) continue;
-        void updateCard(duplicate.id, {
-          isArchived: true,
-          updatedAt: new Date().toISOString(),
-        });
-      }
+    for (const duplicateId of findDuplicateMirroredTaskCardIds(
+      stateRef.current.cards,
+    )) {
+      void updateCard(duplicateId, {
+        isArchived: true,
+        updatedAt: new Date().toISOString(),
+      });
     }
   }, [state.cards, updateCard]);
 
@@ -1460,6 +1698,9 @@ export const useTaskBoardController = ({
     selectedCard,
     activeRuns,
     taskCaptureDebug: taskCaptureDebugInfo,
+    loadTaskDetail,
+    addTaskComment,
+    replyAndResumeTask,
     createManualCard,
     updateCard,
     moveCard,

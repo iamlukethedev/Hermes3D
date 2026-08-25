@@ -6,8 +6,10 @@ import {
   deriveFallbackChatCard,
   deriveRecoveredAgentRequestCard,
   deriveLiveSessionTaskCard,
+  findDuplicateMirroredTaskCardIds,
   isActionableTaskRequest,
   parseExplicitTaskEvent,
+  shouldDispatchCompletedStandup,
   syncCardWithLinkedRun,
 } from "@/features/office/tasks/useTaskBoardController";
 
@@ -21,6 +23,71 @@ const makeAgent = (overrides: Partial<AgentState> = {}) =>
   }) as AgentState;
 
 describe("task board controller helpers", () => {
+  it("never replays a completed standup handoff just because the UI restarted", () => {
+    const meeting = {
+      id: "standup-1",
+      phase: "complete" as const,
+      taskDispatch: {
+        status: "failed" as const,
+        queuedAgentIds: ["agent-1"],
+        blockedAgentIds: [],
+        updatedAt: "2026-08-25T19:00:00.000Z",
+        error: "backend unavailable",
+      },
+    };
+
+    expect(shouldDispatchCompletedStandup(null, meeting)).toBe(false);
+    expect(
+      shouldDispatchCompletedStandup(
+        { id: "standup-1", phase: "in_progress" },
+        meeting,
+      ),
+    ).toBe(true);
+    expect(
+      shouldDispatchCompletedStandup(
+        { id: "standup-1", phase: "complete" },
+        meeting,
+      ),
+    ).toBe(false);
+  });
+
+  it("never archives backend Kanban cards as title duplicates", () => {
+    const makeCard = (id: string, status: "working" | "done") => ({
+      id,
+      title: "Review current priorities and complete the next safe action.",
+      description: "",
+      status,
+      source: "hermes_event" as const,
+      sourceEventId: null,
+      assignedAgentId: "agent-1",
+      createdAt: "2026-08-25T10:00:00.000Z",
+      updatedAt:
+        status === "done"
+          ? "2026-08-25T10:05:00.000Z"
+          : "2026-08-25T11:00:00.000Z",
+      playbookJobId: null,
+      runId: null,
+      channel: "kanban",
+      externalThreadId: null,
+      lastActivityAt: null,
+      notes: [],
+      isArchived: false,
+      isInferred: false,
+      model: null,
+      skills: [] as string[],
+      subagentCount: 0,
+      scheduledFor: null,
+      learnedSkill: false,
+    });
+
+    expect(
+      findDuplicateMirroredTaskCardIds([
+        makeCard("kanban:t_previous", "done"),
+        makeCard("kanban:t_new", "working"),
+      ]),
+    ).toEqual([]);
+  });
+
   it("parses explicit Hermes task events", () => {
     const parsed = parseExplicitTaskEvent({
       type: "event",

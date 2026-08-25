@@ -8,8 +8,12 @@ import {
 
 const {
   KANBAN_TASK_ID_PREFIX,
+  toHermes3dKanbanTaskDetail,
   toHermes3dKanbanTaskRecord,
   toHermes3dKanbanTasks,
+  toKanbanCreateBody,
+  toManagedFleetIntakeBody,
+  toManagedFleetPatchBody,
   toKanbanPatchBody,
   kanbanOriginFromWsUrl,
 } = await import("../../server/hermes-agent/kanban");
@@ -41,6 +45,7 @@ const sampleTask = (overrides: Record<string, unknown> = {}) => ({
   latest_summary: null,
   result: null,
   last_failure_error: null,
+  block_kind: null,
   ...overrides,
 });
 
@@ -66,11 +71,12 @@ describe("toHermes3dKanbanTaskRecord", () => {
   });
 
   it("prefixes the id and converts epoch seconds to ISO timestamps", () => {
-    const record = mustMap(sampleTask());
+    const record = mustMap(sampleTask({ current_run_id: 15 }));
     expect(record.id).toBe(`${KANBAN_TASK_ID_PREFIX}t_4925f3b7`);
     expect(record.createdAt).toBe(new Date(1_787_223_224 * 1000).toISOString());
     expect(record.channel).toBe("kanban");
     expect(record.assignedAgentId).toBe("pr-fixer");
+    expect(record.runId).toBe("15");
     expect(record.archived).toBe(false);
   });
 
@@ -157,6 +163,125 @@ describe("toKanbanPatchBody", () => {
     // Explicit unassignment sends the empty string the PATCH API expects.
     expect(toKanbanPatchBody({ assignedAgentId: null }).assignee).toBe("");
     expect(toKanbanPatchBody({})).toEqual({});
+  });
+});
+
+describe("toKanbanCreateBody", () => {
+  it("maps a standup assignment onto the Hermes create API", () => {
+    expect(
+      toKanbanCreateBody({
+        title: "  Verify the release ",
+        description: "Run the smoke tests.",
+        assignedAgentId: "qa-agent",
+        idempotencyKey: "standup:meeting-1:qa-agent",
+        maxRuntimeSeconds: 3_600,
+        goalMode: true,
+        goalMaxTurns: 8,
+        workspaceKind: "worktree",
+      }),
+    ).toEqual({
+      title: "Verify the release",
+      body: "Run the smoke tests.",
+      assignee: "qa-agent",
+      idempotency_key: "standup:meeting-1:qa-agent",
+      max_runtime_seconds: 3_600,
+      goal_mode: true,
+      goal_max_turns: 8,
+      workspace_kind: "worktree",
+    });
+  });
+
+  it("keeps native review and typed blocker semantics for the office", () => {
+    const record = mustMap(
+      sampleTask({
+        status: "blocked",
+        block_kind: "needs_input",
+        last_failure_error: "Choose the release window.",
+      }),
+    );
+    expect(record.nativeStatus).toBe("blocked");
+    expect(record.blockKind).toBe("needs_input");
+    expect(record.blockerReason).toBe("Choose the release window.");
+  });
+
+  it("rejects a create request without a title", () => {
+    expect(toKanbanCreateBody({ title: "  " })).toBeNull();
+  });
+
+  it("routes managed-fleet standup work to scratch triage without a project", () => {
+    const body = toKanbanCreateBody({
+      title: "Implement the checkout fix",
+      assignedAgentId: "crush-engineer",
+      workspaceKind: "worktree",
+      workspacePath: "C:/GitHub/HermesProjects/.worktrees/unsafe",
+      projectId: "p_untrusted",
+    });
+
+    expect(toManagedFleetIntakeBody(body)).toEqual({
+      title: "Implement the checkout fix",
+      body: "Requested specialist (untrusted intake hint): crush-engineer",
+      assignee: "crush-lead",
+      triage: true,
+      workspace_kind: "scratch",
+    });
+  });
+});
+
+describe("toManagedFleetPatchBody", () => {
+  it("keeps wording edits but strips lifecycle and routing mutations", () => {
+    const mapped = toKanbanPatchBody({
+      title: "  Clarified intake  ",
+      description: "Bounded acceptance criteria",
+      assignedAgentId: "crush-engineer",
+      status: "working",
+      archived: true,
+    });
+
+    expect(toManagedFleetPatchBody(mapped)).toEqual({
+      title: "Clarified intake",
+      body: "Bounded acceptance criteria",
+    });
+  });
+
+  it("turns a managed status-only update into an inert patch", () => {
+    expect(toManagedFleetPatchBody(toKanbanPatchBody({ status: "working" }))).toEqual({});
+  });
+});
+
+describe("toHermes3dKanbanTaskDetail", () => {
+  it("maps the task conversation and falls back to the latest BLOCKED comment", () => {
+    const detail = toHermes3dKanbanTaskDetail({
+      task: sampleTask({ status: "blocked", block_kind: "needs_input" }),
+      comments: [
+        {
+          id: 3,
+          author: "build-agent",
+          body: "BLOCKED: Which API contract should I preserve?",
+          created_at: 1_787_223_300,
+        },
+      ],
+      events: [{ id: 1 }],
+      runs: [{ id: 2 }],
+    });
+    if (!detail) throw new Error("Expected mapped task detail.");
+
+    expect(detail).toEqual(
+      expect.objectContaining({
+        taskId: `${KANBAN_TASK_ID_PREFIX}t_4925f3b7`,
+        nativeStatus: "blocked",
+        blockKind: "needs_input",
+        blockerReason: "Which API contract should I preserve?",
+        eventCount: 1,
+        runCount: 1,
+      }),
+    );
+    expect(detail.comments[0]).toEqual(
+      expect.objectContaining({
+        id: "3",
+        author: "build-agent",
+        body: "BLOCKED: Which API contract should I preserve?",
+      }),
+    );
   });
 });
 

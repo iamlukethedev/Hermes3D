@@ -62,19 +62,22 @@ export function OfficePhaserCanvas(props: OfficePhaserCanvasProps) {
             })
           : createOfficeViewerScene({ PhaserLib, bridge });
       const game = new PhaserLib.Game({
-        type: PhaserLib.AUTO,
+        type: PhaserLib.CANVAS,
         parent: rootRef.current,
         backgroundColor: "transparent",
-        width: map.canvas.width,
-        height: map.canvas.height,
+        width: map.canvas.width || 960,
+        height: map.canvas.height || 640,
         scene: [scene],
         render: {
           antialias: true,
-          pixelArt: false,
+          pixelArt: true,
+          transparent: true,
         },
         scale: {
-          mode: PhaserLib.Scale.RESIZE,
+          mode: PhaserLib.Scale.FIT,
           autoCenter: PhaserLib.Scale.CENTER_BOTH,
+          width: map.canvas.width || 960,
+          height: map.canvas.height || 640,
         },
       });
       gameRef.current = game;

@@ -164,6 +164,12 @@ import { useOfficeSkillsMarketplace } from "@/features/office/hooks/useOfficeSki
 import { useOfficeStandupController } from "@/features/office/hooks/useOfficeStandupController";
 import { useRunLog } from "@/features/office/hooks/useRunLog";
 import { useTaskBoardController } from "@/features/office/tasks/useTaskBoardController";
+import type { TaskBoardCard } from "@/features/office/tasks/types";
+import {
+  getGatewayTaskActivity,
+  isKanbanManagedTaskId,
+  type GatewayTaskActivityResult,
+} from "@/lib/tasks/gateway";
 import {
   OnboardingWizard,
   useOnboardingState,
@@ -451,7 +457,10 @@ const resolveMessageRole = (message: unknown) =>
     : null;
 
 const formatHermesEventLogEntry = (event: EventFrame): HermesLogEntry => {
-  const eventKind = classifyGatewayEventKind(event.event);
+  const eventKind =
+    event.event === "office.speech"
+      ? "office-speech"
+      : classifyGatewayEventKind(event.event);
   const baseSummary = `seq=${event.seq ?? "-"} stateVersion=${safeJsonStringify(event.stateVersion ?? null)}`;
   let summary = baseSummary;
   let role: string | null = null;
@@ -503,6 +512,18 @@ const formatHermesEventLogEntry = (event: EventFrame): HermesLogEntry => {
         streamText = text.trim();
       }
     }
+  } else if (eventKind === "office-speech") {
+    const payload =
+      event.payload && typeof event.payload === "object"
+        ? (event.payload as Record<string, unknown>)
+        : null;
+    const agentId =
+      typeof payload?.agentId === "string" ? payload.agentId.trim() : "";
+    const name = typeof payload?.name === "string" ? payload.name.trim() : "";
+    const text = typeof payload?.text === "string" ? payload.text.trim() : "";
+    role = "assistant";
+    summary = `office speech agent=${agentId || name || "-"} | ${baseSummary}`;
+    if (text) streamText = text;
   }
 
   return createHermesLogEntry({
@@ -960,12 +981,23 @@ export function OfficeScreen({
         phoneBoothHeld: boolean;
         qaHeld: boolean;
         smsBoothHeld: boolean;
+        kanbanTaskKey: string | null;
       }
     >
   >(new Map());
   const deskMonitorCacheRef = useRef<
-    Map<string, { agent: AgentState; monitor: OfficeDeskMonitor }>
+    Map<
+      string,
+      {
+        activityKey: string | null;
+        agent: AgentState;
+        monitor: OfficeDeskMonitor;
+      }
+    >
   >(new Map());
+  const [kanbanActivityByTaskId, setKanbanActivityByTaskId] = useState<
+    Record<string, GatewayTaskActivityResult>
+  >({});
   const [hermesLogEntries, setHermesLogEntries] = useState<
     HermesLogEntry[]
   >([]);
@@ -977,6 +1009,7 @@ export function OfficeScreen({
   >("idle");
   const taskBoardEventHandlerRef = useRef<(event: EventFrame) => void>(() => {});
   const taskBoardRefreshRef = useRef<() => Promise<void>>(async () => {});
+  const kanbanTaskStatusSnapshotRef = useRef<Map<string, string>>(new Map());
   const [officeTriggerState, setOfficeTriggerState] = useState(() =>
     createOfficeAnimationTriggerState(),
   );
@@ -2827,26 +2860,16 @@ export function OfficeScreen({
     if (state.agents.some((agent) => agent.agentId === agentEditorAgentId)) return;
     setAgentEditorAgentId(null);
   }, [agentEditorAgentId, state.agents]);
-
   const runLog = useRunLog({
     client,
     status,
     enabled: runtimeSupportsRunLifecycle,
     agents: state.agents,
   });
-  const standupAgentSnapshots = useMemo<StandupAgentSnapshot[]>(
-    () =>
-      state.agents.map((agent) => ({
-        agentId: agent.agentId,
-        name: agent.name || agent.agentId,
-        latestPreview: agent.latestPreview,
-        lastUserMessage: agent.lastUserMessage,
-      })),
-    [state.agents],
-  );
+  const liveStandupAgentSnapshotsRef = useRef<StandupAgentSnapshot[]>([]);
   const standupController = useOfficeStandupController({
     gatewayUrl,
-    agents: standupAgentSnapshots,
+    agents: () => liveStandupAgentSnapshotsRef.current,
   });
   const taskBoard = useTaskBoardController({
     gatewayUrl,
@@ -2858,6 +2881,154 @@ export function OfficeScreen({
     runLog,
     standup: standupController,
   });
+
+  const buildLiveStandupAgentSnapshots = useCallback((): StandupAgentSnapshot[] => {
+    return state.agents.map((agent) => {
+      const working = taskBoard.cardsByStatus.working.find(
+        (c) => c.assignedAgentId === agent.agentId,
+      );
+      const blocked = taskBoard.cardsByStatus.needs_attention.find(
+        (c) => c.assignedAgentId === agent.agentId,
+      );
+      const scheduled = taskBoard.cardsByStatus.scheduled.find(
+        (c) => c.assignedAgentId === agent.agentId,
+      );
+      const inbox = taskBoard.cardsByStatus.inbox.find(
+        (c) => c.assignedAgentId === agent.agentId,
+      );
+      const activeCard = working || blocked || scheduled || inbox;
+
+      return {
+        agentId: agent.agentId,
+        name: agent.name || agent.agentId,
+        latestPreview: agent.latestPreview,
+        lastUserMessage: agent.lastUserMessage,
+        kanbanTaskTitle: activeCard?.title || null,
+        kanbanTaskBlocker: blocked
+          ? (activeCard?.notes?.[0] || "Task is blocked in Kanban")
+          : null,
+      };
+    });
+  }, [state.agents, taskBoard.cardsByStatus]);
+
+  useEffect(() => {
+    liveStandupAgentSnapshotsRef.current = buildLiveStandupAgentSnapshots();
+  }, [buildLiveStandupAgentSnapshots]);
+
+  const kanbanWorkingTaskByAgentId = useMemo(() => {
+    const next = new Map<string, TaskBoardCard>();
+    for (const card of taskBoard.cardsByStatus.working) {
+      if (!isKanbanManagedTaskId(card.id) || !card.assignedAgentId) continue;
+      const existing = next.get(card.assignedAgentId);
+      if (
+        !existing ||
+        Date.parse(card.updatedAt) >= Date.parse(existing.updatedAt)
+      ) {
+        next.set(card.assignedAgentId, card);
+      }
+    }
+    return next;
+  }, [taskBoard.cardsByStatus.working]);
+  const kanbanMonitorTaskByAgentId = useMemo(() => {
+    const next = new Map(kanbanWorkingTaskByAgentId);
+    for (const card of taskBoard.cardsByStatus.done) {
+      if (!isKanbanManagedTaskId(card.id) || !card.assignedAgentId) continue;
+      const existing = next.get(card.assignedAgentId);
+      if (
+        !existing ||
+        (existing.status !== "working" &&
+          Date.parse(card.updatedAt) >= Date.parse(existing.updatedAt))
+      ) {
+        next.set(card.assignedAgentId, card);
+      }
+    }
+    return next;
+  }, [kanbanWorkingTaskByAgentId, taskBoard.cardsByStatus.done]);
+  const kanbanActivityTaskSignature = useMemo(() => {
+    const taskIds = new Set(
+      Array.from(kanbanWorkingTaskByAgentId.values()).map((task) => task.id),
+    );
+    if (monitorAgentId) {
+      const selectedTask = kanbanMonitorTaskByAgentId.get(monitorAgentId);
+      if (selectedTask) taskIds.add(selectedTask.id);
+    }
+    return Array.from(taskIds).sort().join("|");
+  }, [kanbanMonitorTaskByAgentId, kanbanWorkingTaskByAgentId, monitorAgentId]);
+
+  useEffect(() => {
+    const taskIds = kanbanActivityTaskSignature
+      .split("|")
+      .map((taskId) => taskId.trim())
+      .filter(Boolean);
+    if (status !== "connected" || taskIds.length === 0) {
+      setKanbanActivityByTaskId({});
+      return;
+    }
+
+    let cancelled = false;
+    const refresh = async () => {
+      const results = await Promise.all(
+        taskIds.map(async (taskId) => {
+          try {
+            return await getGatewayTaskActivity(client, {
+              id: taskId,
+              tail: 24_000,
+            });
+          } catch {
+            return null;
+          }
+        }),
+      );
+      if (cancelled) return;
+      const next: Record<string, GatewayTaskActivityResult> = {};
+      for (const result of results) {
+        if (result) next[result.taskId] = result;
+      }
+      setKanbanActivityByTaskId(next);
+    };
+
+    void refresh();
+    const intervalId = window.setInterval(() => {
+      void refresh();
+    }, 2_500);
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [client, kanbanActivityTaskSignature, status]);
+
+  useEffect(() => {
+    const nextSnapshot = new Map<string, string>();
+    const additions: HermesLogEntry[] = [];
+    for (const card of taskBoard.state.cards) {
+      if (!isKanbanManagedTaskId(card.id) || card.isArchived) continue;
+      nextSnapshot.set(card.id, card.status);
+      const previousStatus = kanbanTaskStatusSnapshotRef.current.get(card.id);
+      if (previousStatus === card.status) continue;
+      additions.push(
+        createHermesLogEntry({
+          eventName: `kanban.task.${card.status}`,
+          eventKind: "kanban",
+          summary: `task=${card.id} agent=${card.assignedAgentId ?? "-"} status=${card.status} run=${card.runId ?? "-"}`,
+          payload: {
+            taskId: card.id,
+            title: card.title,
+            status: card.status,
+            assignedAgentId: card.assignedAgentId,
+            runId: card.runId,
+            updatedAt: card.updatedAt,
+            notes: card.notes,
+          },
+          streamText: card.notes.join("\n") || null,
+        }),
+      );
+    }
+    kanbanTaskStatusSnapshotRef.current = nextSnapshot;
+    if (additions.length === 0) return;
+    setHermesLogEntries((previous) =>
+      [...previous, ...additions].slice(-MAX_HERMES_LOG_ENTRIES),
+    );
+  }, [taskBoard.state.cards]);
   const ingestTaskBoardEvent = taskBoard.ingestGatewayEvent;
   taskBoardEventHandlerRef.current = ingestTaskBoardEvent;
   taskBoardRefreshRef.current = async () => {
@@ -3938,6 +4109,7 @@ export function OfficeScreen({
         phoneBoothHeld: boolean;
         qaHeld: boolean;
         smsBoothHeld: boolean;
+        kanbanTaskKey: string | null;
       }
     >();
     const nextOfficeAgents = state.agents.map((agent) => {
@@ -3947,6 +4119,10 @@ export function OfficeScreen({
       const phoneBoothHeld = Boolean(phoneBoothHoldByAgentId[agent.agentId]);
       const qaHeld = Boolean(qaHoldByAgentId[agent.agentId]);
       const smsBoothHeld = Boolean(smsBoothHoldByAgentId[agent.agentId]);
+      const kanbanTask = kanbanWorkingTaskByAgentId.get(agent.agentId) ?? null;
+      const kanbanTaskKey = kanbanTask
+        ? `${kanbanTask.id}:${kanbanTask.runId ?? "-"}:${kanbanTask.updatedAt}`
+        : null;
       const cached = officeAgentCacheRef.current.get(agent.agentId);
       if (
         cached &&
@@ -3956,17 +4132,25 @@ export function OfficeScreen({
         cached.gymHeld === gymHeld &&
         cached.phoneBoothHeld === phoneBoothHeld &&
         cached.qaHeld === qaHeld &&
-        cached.smsBoothHeld === smsBoothHeld
+        cached.smsBoothHeld === smsBoothHeld &&
+        cached.kanbanTaskKey === kanbanTaskKey
       ) {
         nextCache.set(agent.agentId, cached);
         return cached.officeAgent;
       }
       const effectiveAgent: AgentState =
-        latchedWorking && agent.status !== "error"
+        (kanbanTask || latchedWorking) && agent.status !== "error"
           ? {
               ...agent,
               status: "running",
-              runId: agent.runId ?? `latched-${agent.agentId}`,
+              runId:
+                agent.runId ??
+                kanbanTask?.runId ??
+                kanbanTask?.id ??
+                `latched-${agent.agentId}`,
+              latestPreview: kanbanTask
+                ? `Kanban: ${kanbanTask.title}`
+                : agent.latestPreview,
             }
           : (deskHeld || gymHeld || qaHeld || phoneBoothHeld || smsBoothHeld) &&
               agent.status !== "error"
@@ -3996,6 +4180,7 @@ export function OfficeScreen({
         phoneBoothHeld,
         qaHeld,
         smsBoothHeld,
+        kanbanTaskKey,
       });
       return officeAgent;
     });
@@ -4005,6 +4190,7 @@ export function OfficeScreen({
     clockTick,
     deskHoldByAgentId,
     gymHoldByAgentId,
+    kanbanWorkingTaskByAgentId,
     phoneBoothHoldByAgentId,
     qaHoldByAgentId,
     smsBoothHoldByAgentId,
@@ -4028,10 +4214,11 @@ export function OfficeScreen({
     }
 
     for (const agent of state.agents) {
+      const kanbanTask = kanbanWorkingTaskByAgentId.get(agent.agentId) ?? null;
       lines.push("");
       lines.push(`[${agent.agentId}] ${agent.name || "Agent"}`);
       lines.push(
-        `status=${agent.status} runId=${agent.runId ?? "-"} session=${agent.sessionKey}`,
+        `status=${kanbanTask ? "running (kanban-worker)" : agent.status} runId=${kanbanTask?.runId ?? agent.runId ?? "-"} session=${agent.sessionKey}`,
       );
       lines.push(
         `lastActivity=${agent.lastActivityAt ? formatHermesTimestamp(agent.lastActivityAt) : "-"} lastAssistant=${agent.lastAssistantMessageAt ? formatHermesTimestamp(agent.lastAssistantMessageAt) : "-"}`,
@@ -4039,6 +4226,11 @@ export function OfficeScreen({
       lines.push(
         `latestPreview=${formatHermesValue(agent.latestPreview)} lastUser=${formatHermesValue(agent.lastUserMessage)}`,
       );
+      if (kanbanTask) {
+        lines.push(
+          `kanbanTask=${kanbanTask.id} status=${kanbanTask.status} title=${kanbanTask.title}`,
+        );
+      }
       if (agent.thinkingTrace?.trim()) {
         lines.push("thinking>");
         lines.push(agent.thinkingTrace.trim());
@@ -4058,7 +4250,7 @@ export function OfficeScreen({
     }
 
     return lines.join("\n");
-  }, [state.agents]);
+  }, [kanbanWorkingTaskByAgentId, state.agents]);
   const remoteOfficeAgents = useMemo(
     () =>
       (remoteOfficeSnapshot?.agents ?? []).map((agent) =>
@@ -4072,7 +4264,9 @@ export function OfficeScreen({
         id: agent.agentId,
         name: agent.name || agent.agentId,
         kind: "local" as const,
-        isRunning: agent.status === "running",
+        isRunning:
+          agent.status === "running" ||
+          kanbanWorkingTaskByAgentId.has(agent.agentId),
       })),
       ...remoteOfficeAgents.map((agent) => ({
         id: agent.id,
@@ -4081,7 +4275,7 @@ export function OfficeScreen({
         isRunning: agent.status === "working",
       })),
     ],
-    [remoteOfficeAgents, state.agents],
+    [kanbanWorkingTaskByAgentId, remoteOfficeAgents, state.agents],
   );
   const focusedRemoteChatTarget = selectedChatAgentId
     ? (remoteOfficeAgents.find((agent) => agent.id === selectedChatAgentId) ?? null)
@@ -4206,20 +4400,50 @@ export function OfficeScreen({
     () => {
       const nextCache = new Map<
         string,
-        { agent: AgentState; monitor: OfficeDeskMonitor }
+        {
+          activityKey: string | null;
+          agent: AgentState;
+          monitor: OfficeDeskMonitor;
+        }
       >();
       const nextMonitorByAgentId: Record<string, OfficeDeskMonitor> = {};
 
       for (const agent of state.agents) {
+        const kanbanTask = kanbanMonitorTaskByAgentId.get(agent.agentId) ?? null;
+        const activity = kanbanTask
+          ? (kanbanActivityByTaskId[kanbanTask.id] ?? null)
+          : null;
+        const activityKey = kanbanTask
+          ? `${kanbanTask.id}:${kanbanTask.title}:${activity?.sizeBytes ?? 0}:${activity?.content.slice(-160) ?? ""}`
+          : null;
         const cached = deskMonitorCacheRef.current.get(agent.agentId);
-        if (cached && cached.agent === agent) {
+        if (
+          cached &&
+          cached.agent === agent &&
+          cached.activityKey === activityKey
+        ) {
           nextCache.set(agent.agentId, cached);
           nextMonitorByAgentId[agent.agentId] = cached.monitor;
           continue;
         }
 
-        const monitor = buildOfficeDeskMonitor(agent);
-        const entry = { agent, monitor };
+        const activityAt = kanbanTask
+          ? Date.parse(kanbanTask.lastActivityAt ?? kanbanTask.updatedAt)
+          : Number.NaN;
+        const monitor = buildOfficeDeskMonitor(
+          agent,
+          kanbanTask
+              ? {
+                taskId: kanbanTask.id,
+                taskTitle: kanbanTask.title,
+                taskStatus: kanbanTask.status,
+                runId: kanbanTask.runId,
+                logContent: activity?.content ?? "",
+                updatedAt: Number.isFinite(activityAt) ? activityAt : null,
+              }
+            : null,
+        );
+        const entry = { activityKey, agent, monitor };
         nextCache.set(agent.agentId, entry);
         nextMonitorByAgentId[agent.agentId] = monitor;
       }
@@ -4227,7 +4451,7 @@ export function OfficeScreen({
       deskMonitorCacheRef.current = nextCache;
       return nextMonitorByAgentId;
     },
-    [state.agents],
+    [kanbanActivityByTaskId, kanbanMonitorTaskByAgentId, state.agents],
   );
   const githubSkill = useMemo<SkillStatusEntry | null>(
     () =>
@@ -4547,7 +4771,8 @@ export function OfficeScreen({
               !standupController.meeting ||
               standupController.meeting.phase === "complete"
             ) {
-              void standupController.startMeeting("manual");
+              const freshSnapshots = buildLiveStandupAgentSnapshots();
+              void standupController.startMeeting("manual", freshSnapshots);
             }
           }}
           onMonitorSelect={(agentId) => {
@@ -4605,6 +4830,9 @@ export function OfficeScreen({
           }}
           onTaskBoardUpdateCard={taskBoard.updateCard}
           onTaskBoardDeleteCard={taskBoard.removeCard}
+          onTaskBoardLoadTaskDetail={taskBoard.loadTaskDetail}
+          onTaskBoardAddTaskComment={taskBoard.addTaskComment}
+          onTaskBoardReplyAndResumeTask={taskBoard.replyAndResumeTask}
           onTaskBoardRefreshCronJobs={() => {
             void taskBoard.refreshSharedTasks();
             void taskBoard.refreshRemoteTasks();
@@ -4803,6 +5031,9 @@ export function OfficeScreen({
               onSelectCard={taskBoard.selectCard}
               onUpdateCard={taskBoard.updateCard}
               onDeleteCard={taskBoard.removeCard}
+              onLoadTaskDetail={taskBoard.loadTaskDetail}
+              onAddTaskComment={taskBoard.addTaskComment}
+              onReplyAndResumeTask={taskBoard.replyAndResumeTask}
               onRefreshCronJobs={() => {
                 void taskBoard.refreshSharedTasks();
                 void taskBoard.refreshRemoteTasks();
@@ -4968,12 +5199,12 @@ export function OfficeScreen({
               </div>
             )}
             <div className="text-[9px] uppercase tracking-[0.16em] text-cyan-300/70">
-              Raw Hermes Gateway Events
+              Hermes Gateway + Kanban Events
             </div>
             {filteredHermesLogEntries.length === 0 ? (
               <div className="rounded border border-cyan-500/10 bg-cyan-950/10 p-2 text-cyan-100/45">
                 {hermesLogEntries.length === 0
-                  ? "No Hermes gateway events received yet."
+                  ? "No Hermes or Kanban events received yet."
                   : "No Hermes events match the current search."}
               </div>
             ) : (

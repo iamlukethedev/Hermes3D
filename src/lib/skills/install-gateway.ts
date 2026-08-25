@@ -11,8 +11,8 @@ import {
   type PackagedSkillInstallResult,
 } from "@/lib/skills/types";
 
-const normalizeRequired = (value: string, field: string): string => {
-  const trimmed = value.trim();
+const normalizeRequired = (value: unknown, field: string): string => {
+  const trimmed = typeof value === "string" ? value.trim() : "";
   if (!trimmed) {
     throw new Error(`${field} is required.`);
   }
@@ -20,6 +20,35 @@ const normalizeRequired = (value: string, field: string): string => {
 };
 
 const normalizeOptional = (value: string | undefined | null): string => value?.trim() ?? "";
+
+const supportsDirectPackagedSkillInstall = (client: GatewayClient): boolean => {
+  if (typeof client.getLastHello !== "function") return false;
+  const methods = client.getLastHello()?.features?.methods;
+  return Array.isArray(methods) && methods.includes("skills.packaged.install");
+};
+
+const installPackagedSkillDirectly = async (params: {
+  client: GatewayClient;
+  agentId: string;
+  skillKey: string;
+  files: Array<{ relativePath: string; content: string }>;
+}): Promise<PackagedSkillInstallResult> => {
+  const payload = await params.client.call<Partial<PackagedSkillInstallResult>>(
+    "skills.packaged.install",
+    {
+      agentId: params.agentId,
+      skillKey: params.skillKey,
+      files: params.files,
+    },
+  );
+  const installedPath = normalizeRequired(payload?.installedPath, "installedPath");
+  return {
+    installed: payload?.installed === true,
+    installedPath,
+    source: "hermes-workspace",
+    skillKey: params.skillKey,
+  };
+};
 
 const getPathLeaf = (value: string): string => {
   const normalized = value.replace(/[\\/]+$/, "");
@@ -103,11 +132,25 @@ export const installPackagedSkillViaGatewayAgent = async (params: {
     throw new Error("Gateway-native packaged install currently supports workspace skills only.");
   }
 
+  const files = readPackagedSkillFiles(packagedSkill.packageId);
+  const agentId = normalizeOptional(params.request.agentId);
+  if (supportsDirectPackagedSkillInstall(params.client)) {
+    if (!agentId) {
+      throw new Error("agentId is required to install a packaged skill on this gateway.");
+    }
+    return installPackagedSkillDirectly({
+      client: params.client,
+      agentId,
+      skillKey: packagedSkill.skillKey,
+      files,
+    });
+  }
+
   let workspaceDir = normalizeRequired(params.request.workspaceDir, "workspaceDir");
-  if (isRootWorkspace(workspaceDir) && normalizeOptional(params.request.agentId)) {
+  if (isRootWorkspace(workspaceDir) && agentId) {
     const recoveredWorkspace = await resolveWorkspaceFromAgentFiles(
       params.client,
-      normalizeOptional(params.request.agentId)
+      agentId,
     );
     if (recoveredWorkspace) {
       workspaceDir = recoveredWorkspace;
@@ -118,7 +161,6 @@ export const installPackagedSkillViaGatewayAgent = async (params: {
     agentId: params.request.agentId,
     agentName: params.request.agentName,
   });
-  const files = readPackagedSkillFiles(packagedSkill.packageId);
   const installerName = `Skill Installer ${Date.now()}`;
 
   let installerAgentId: string | null = null;

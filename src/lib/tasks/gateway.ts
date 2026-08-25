@@ -19,6 +19,11 @@ export type GatewayTaskRecord = {
   lastActivityAt?: string | null;
   notes?: string[];
   archived?: boolean;
+  /** Native Hermes status before it is collapsed into an office column. */
+  nativeStatus?: string | null;
+  /** Typed Hermes blocker category, for example `needs_input` or `capability`. */
+  blockKind?: string | null;
+  blockerReason?: string | null;
 };
 
 export type GatewayTasksListResult = {
@@ -37,6 +42,44 @@ export type GatewayTaskCreateInput = {
   notes?: string[];
   source?: TaskBoardCard["source"];
   sourceEventId?: string | null;
+  idempotencyKey?: string | null;
+  maxRuntimeSeconds?: number | null;
+  goalMode?: boolean;
+  goalMaxTurns?: number | null;
+  workspaceKind?: "scratch" | "dir" | "worktree";
+  workspacePath?: string | null;
+  projectId?: string | null;
+};
+
+export type GatewayTaskDispatchResult = {
+  spawned?: unknown[];
+  [key: string]: unknown;
+};
+
+export type GatewayTaskActivityResult = {
+  taskId: string;
+  exists: boolean;
+  sizeBytes: number;
+  content: string;
+};
+
+export type GatewayTaskComment = {
+  id: string;
+  author: string;
+  body: string;
+  createdAt: string | null;
+};
+
+export type GatewayTaskDetailResult = {
+  taskId: string;
+  nativeStatus: string | null;
+  blockKind: string | null;
+  blockerReason: string | null;
+  comments: GatewayTaskComment[];
+  eventCount: number;
+  runCount: number;
+  /** The task was unblocked even if the best-effort dispatcher nudge failed. */
+  dispatchWarning?: string | null;
 };
 
 export type GatewayTaskUpdateInput = {
@@ -113,7 +156,81 @@ export const createGatewayTask = async (
     ...(input.notes ? { notes: input.notes } : {}),
     ...(input.source ? { source: input.source } : {}),
     ...(input.sourceEventId !== undefined ? { sourceEventId: input.sourceEventId } : {}),
+    ...(input.idempotencyKey !== undefined
+      ? { idempotencyKey: trimOrUndefined(input.idempotencyKey) ?? null }
+      : {}),
+    ...(input.maxRuntimeSeconds !== undefined
+      ? { maxRuntimeSeconds: input.maxRuntimeSeconds }
+      : {}),
+    ...(input.goalMode !== undefined ? { goalMode: input.goalMode } : {}),
+    ...(input.goalMaxTurns !== undefined
+      ? { goalMaxTurns: input.goalMaxTurns }
+      : {}),
+    ...(input.workspaceKind !== undefined
+      ? { workspaceKind: input.workspaceKind }
+      : {}),
+    ...(input.workspacePath !== undefined
+      ? { workspacePath: trimOrUndefined(input.workspacePath) ?? null }
+      : {}),
+    ...(input.projectId !== undefined
+      ? { projectId: trimOrUndefined(input.projectId) ?? null }
+      : {}),
   });
+};
+
+export const getGatewayTaskActivity = async (
+  client: GatewayClient,
+  params: { id: string; tail?: number },
+): Promise<GatewayTaskActivityResult> => {
+  const id = trimOrUndefined(params.id);
+  if (!id) throw new Error("Task id is required.");
+  const requestedTail = params.tail ?? 24_000;
+  const tail = Number.isFinite(requestedTail)
+    ? Math.max(1_000, Math.min(200_000, Math.round(requestedTail)))
+    : 24_000;
+  return client.call<GatewayTaskActivityResult>("tasks.activity", { id, tail });
+};
+
+export const getGatewayTaskDetail = async (
+  client: GatewayClient,
+  id: string,
+): Promise<GatewayTaskDetailResult> => {
+  const taskId = trimOrUndefined(id);
+  if (!taskId) throw new Error("Task id is required.");
+  return client.call<GatewayTaskDetailResult>("tasks.show", { id: taskId });
+};
+
+export const commentGatewayTask = async (
+  client: GatewayClient,
+  params: { id: string; body: string },
+): Promise<GatewayTaskDetailResult> => {
+  const id = trimOrUndefined(params.id);
+  const body = trimOrUndefined(params.body);
+  if (!id) throw new Error("Task id is required.");
+  if (!body) throw new Error("Comment is required.");
+  return client.call<GatewayTaskDetailResult>("tasks.comment", { id, body });
+};
+
+export const replyAndResumeGatewayTask = async (
+  client: GatewayClient,
+  params: { id: string; reply: string },
+): Promise<GatewayTaskDetailResult> => {
+  const id = trimOrUndefined(params.id);
+  const reply = trimOrUndefined(params.reply);
+  if (!id) throw new Error("Task id is required.");
+  if (!reply) throw new Error("A reply is required before resuming the task.");
+  return client.call<GatewayTaskDetailResult>("tasks.unblock", { id, reply });
+};
+
+export const dispatchGatewayTasks = async (
+  client: GatewayClient,
+  params: { max?: number } = {},
+): Promise<GatewayTaskDispatchResult> => {
+  const requestedMax = params.max ?? 8;
+  const max = Number.isFinite(requestedMax)
+    ? Math.max(1, Math.min(32, Math.round(requestedMax)))
+    : 8;
+  return client.call<GatewayTaskDispatchResult>("tasks.dispatch", { max });
 };
 
 export const updateGatewayTask = async (

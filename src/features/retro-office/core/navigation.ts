@@ -2,6 +2,7 @@ import {
   AGENT_RADIUS,
   CANVAS_H,
   CANVAS_W,
+  STANDUP_TABLE_ID,
 } from "@/features/retro-office/core/constants";
 import {
   getItemBounds,
@@ -354,20 +355,42 @@ export const getDeskLocations = (items: FurnitureItem[]) =>
     .filter((item) => item.type === "desk_cubicle")
     .map((item) => ({ x: item.x + 40, y: item.y - 5 }));
 
+export const isStandupMeetingTable = (item: FurnitureItem) =>
+  item.type === "round_table" && item.id === STANDUP_TABLE_ID;
+
+export const findStandupMeetingTable = (items: FurnitureItem[]) =>
+  items.find(isStandupMeetingTable) ??
+  items.find((item) => item.type === "round_table") ??
+  null;
+
 export const getMeetingSeatLocations = (items: FurnitureItem[]) => {
-  // Meeting seats are inferred from chair placement in the conference area so standup
-  // gathering follows the authored layout instead of a hardcoded attendee list.
+  // Meeting seats are inferred from chair placement around the conference table
+  const table = findStandupMeetingTable(items);
+  const tableCenterX = table ? table.x + (table.w ?? table.r ?? 65) : 340 + 65;
+  const tableCenterY = table ? table.y + (table.h ?? table.r ?? 65) : 160 + 65;
+
   const chairs = items
-    .filter(
-      (item) =>
-        item.type === "chair" &&
-        item.x >= 0 &&
-        item.x <= 290 &&
-        item.y >= 0 &&
-        item.y <= 235,
-    )
+    .filter((item) => {
+      if (item.type !== "chair") return false;
+      const chairCenterX = item.x + ITEM_FOOTPRINT.chair[0] / 2;
+      const chairCenterY = item.y + ITEM_FOOTPRINT.chair[1] / 2;
+      const dist = Math.hypot(chairCenterX - tableCenterX, chairCenterY - tableCenterY);
+      return dist <= 200;
+    })
     .sort((left, right) => left.y - right.y || left.x - right.x);
-  if (chairs.length === 0) return [];
+
+  if (chairs.length === 0) {
+    // Generate 4 circular meeting positions around the table if no explicit chairs
+    const radius = 65;
+    return [0, 1, 2, 3].map((i) => {
+      const angle = (i * Math.PI) / 2;
+      return {
+        x: tableCenterX + Math.cos(angle) * radius,
+        y: tableCenterY + Math.sin(angle) * radius,
+        facing: angle + Math.PI,
+      };
+    });
+  }
 
   const chairCenters = chairs.map((item) => ({
     item,

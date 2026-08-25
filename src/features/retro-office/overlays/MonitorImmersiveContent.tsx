@@ -3,7 +3,10 @@
 import Image from "next/image";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { shouldPreferBrowserScreenshot } from "@/lib/office/browserPreview";
-import type { OfficeDeskMonitor } from "@/lib/office/deskMonitor";
+import type {
+  OfficeDeskMonitor,
+  OfficeDeskMonitorEntry,
+} from "@/lib/office/deskMonitor";
 
 type BrowserPreviewSnapshot = {
   mediaUrl: string | null;
@@ -14,6 +17,251 @@ type BrowserPreviewSnapshot = {
 };
 
 const BROWSER_EMBED_FALLBACK_MS = 2500;
+
+const getAgentInitials = (name: string): string => {
+  const parts = name.trim().split(/[^a-z0-9]+/i).filter(Boolean);
+  if (parts.length === 0) return "?";
+  return parts
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("");
+};
+
+const getEntryLabel = (kind: OfficeDeskMonitorEntry["kind"]): string => {
+  if (kind === "thinking") return "Progress";
+  if (kind === "tool") return "Command / tool";
+  if (kind === "user") return "Objective";
+  return "Worker output";
+};
+
+const formatTerminalEntry = (entry: OfficeDeskMonitorEntry): string => {
+  if (entry.kind === "tool") return `$ ${entry.text}`;
+  if (entry.kind === "thinking") return `# ${entry.text}`;
+  if (entry.kind === "user") return `> ${entry.text}`;
+  return entry.text;
+};
+
+function MonitorAgentRail({
+  activeAgentId,
+  monitors,
+  onAgentSelect,
+}: {
+  activeAgentId: string;
+  monitors: OfficeDeskMonitor[];
+  onAgentSelect?: (agentId: string) => void;
+}) {
+  const options = monitors.length > 0 ? monitors : [];
+  return (
+    <div className="flex w-[76px] shrink-0 flex-col items-center gap-3 border-r border-white/6 bg-[#18191d] py-4">
+      <div className="mb-1 text-[9px] font-semibold uppercase tracking-[0.2em] text-white/30">
+        Agents
+      </div>
+      {options.map((option) => {
+        const active = option.agentId === activeAgentId;
+        return (
+          <button
+            key={option.agentId}
+            type="button"
+            title={`Open ${option.agentName} monitor`}
+            aria-label={`Open ${option.agentName} monitor`}
+            aria-pressed={active}
+            onClick={() => onAgentSelect?.(option.agentId)}
+            className={`relative flex h-11 w-11 items-center justify-center rounded-xl border font-mono text-[11px] font-semibold transition-colors ${
+              active
+                ? "border-emerald-300/45 bg-emerald-300/14 text-emerald-100"
+                : "border-white/8 bg-[#2b2d31] text-white/48 hover:border-white/20 hover:text-white/80"
+            }`}
+          >
+            {getAgentInitials(option.agentName)}
+            <span
+              className={`absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full border-2 border-[#18191d] ${
+                option.live ? "bg-emerald-400" : "bg-white/25"
+              }`}
+            />
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function KanbanTaskMonitor({
+  monitor,
+  monitors,
+  onAgentSelect,
+}: {
+  monitor: OfficeDeskMonitor;
+  monitors: OfficeDeskMonitor[];
+  onAgentSelect?: (agentId: string) => void;
+}) {
+  const [view, setView] = useState<"activity" | "terminal">("activity");
+  const task = monitor.task;
+  const currentEntry = [...monitor.entries]
+    .reverse()
+    .find((entry) => entry.kind !== "user");
+
+  if (!task) return null;
+
+  return (
+    <div className="absolute inset-0 overflow-hidden bg-[#111317] text-[#d4d4d4]">
+      <div className="flex h-full flex-col">
+        <div className="flex h-11 shrink-0 items-center justify-between border-b border-white/8 bg-[#202228] px-5">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <span className="h-3 w-3 rounded-full bg-[#ff5f57]" />
+              <span className="h-3 w-3 rounded-full bg-[#febc2e]" />
+              <span className="h-3 w-3 rounded-full bg-[#28c840]" />
+            </div>
+            <span className="font-mono text-[11px] uppercase tracking-[0.22em] text-white/42">
+              Live task workspace
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span
+              className={`h-2 w-2 rounded-full ${
+                monitor.live ? "animate-pulse bg-emerald-400" : "bg-white/30"
+              }`}
+            />
+            <span
+              className={`font-mono text-[11px] uppercase tracking-[0.18em] ${
+                monitor.live ? "text-emerald-200/90" : "text-white/50"
+              }`}
+            >
+              {task.status}
+            </span>
+          </div>
+        </div>
+
+        <div className="flex min-h-0 flex-1">
+          <MonitorAgentRail
+            activeAgentId={monitor.agentId}
+            monitors={monitors}
+            onAgentSelect={onAgentSelect}
+          />
+
+          <main className="flex min-w-0 flex-1 flex-col">
+            <section className="shrink-0 border-b border-white/8 bg-[#181b20] px-7 py-5">
+              <div className="flex items-start justify-between gap-8">
+                <div className="min-w-0">
+                  <div className="font-mono text-[10px] uppercase tracking-[0.24em] text-emerald-300/65">
+                    Current objective
+                  </div>
+                  <h1 className="mt-2 max-w-5xl text-[22px] font-semibold leading-8 text-white/94">
+                    {task.title}
+                  </h1>
+                  <div className="mt-3 flex flex-wrap items-center gap-2 font-mono text-[11px] text-white/48">
+                    <span className="rounded-md border border-white/8 bg-white/[0.03] px-2.5 py-1">
+                      {monitor.agentName}
+                    </span>
+                    <span className="rounded-md border border-white/8 bg-white/[0.03] px-2.5 py-1">
+                      {task.id}
+                    </span>
+                    {task.runId ? (
+                      <span className="rounded-md border border-white/8 bg-white/[0.03] px-2.5 py-1">
+                        Run {task.runId}
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
+                <div className="w-[320px] shrink-0 rounded-xl border border-emerald-300/12 bg-emerald-300/[0.045] px-4 py-3">
+                  <div className="font-mono text-[9px] uppercase tracking-[0.22em] text-emerald-200/55">
+                    Current step
+                  </div>
+                  <div className="mt-2 line-clamp-3 font-mono text-[12px] leading-5 text-emerald-50/78">
+                    {currentEntry?.text || "Worker started. Waiting for the first activity update."}
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <div className="flex shrink-0 items-center justify-between border-b border-white/8 bg-[#15171b] px-7 py-3">
+              <div className="flex items-center gap-2">
+                {(["activity", "terminal"] as const).map((option) => (
+                  <button
+                    key={option}
+                    type="button"
+                    onClick={() => setView(option)}
+                    className={`rounded-lg border px-4 py-2 font-mono text-[11px] uppercase tracking-[0.16em] transition-colors ${
+                      view === option
+                        ? "border-sky-300/30 bg-sky-300/10 text-sky-100"
+                        : "border-white/8 text-white/42 hover:border-white/18 hover:text-white/72"
+                    }`}
+                  >
+                    {option === "activity" ? "Live activity" : "Full terminal"}
+                  </button>
+                ))}
+              </div>
+              <div className="font-mono text-[10px] text-white/30">
+                {monitor.entries.length} visible updates · refreshes automatically
+              </div>
+            </div>
+
+            {view === "activity" ? (
+              <div className="min-h-0 flex-1 overflow-auto px-7 py-5">
+                {monitor.entries.length > 0 ? (
+                  <div className="mx-auto max-w-6xl space-y-3">
+                    {monitor.entries.map((entry, index) => (
+                      <article
+                        key={`${monitor.agentId}-${task.id}-${entry.kind}-${index}`}
+                        className={`grid grid-cols-[135px_minmax(0,1fr)] gap-4 rounded-xl border px-4 py-3 ${
+                          entry.kind === "tool"
+                            ? "border-sky-400/12 bg-sky-400/[0.045]"
+                            : entry.kind === "thinking"
+                              ? "border-fuchsia-400/12 bg-fuchsia-400/[0.045]"
+                              : entry.kind === "user"
+                                ? "border-amber-400/12 bg-amber-400/[0.045]"
+                                : "border-white/8 bg-white/[0.025]"
+                        }`}
+                      >
+                        <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-white/34">
+                          {getEntryLabel(entry.kind)}
+                          {entry.live ? (
+                            <div className="mt-1 text-emerald-300/55">Live</div>
+                          ) : null}
+                        </div>
+                        <div className="whitespace-pre-wrap break-words font-mono text-[13px] leading-6 text-white/78">
+                          {entry.text}
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex h-full items-center justify-center font-mono text-[13px] text-white/38">
+                    Waiting for worker activity…
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="min-h-0 flex-1 overflow-auto bg-[#090d10] px-7 py-6 font-mono text-[14px] leading-7 text-[#9cdcfe]">
+                {monitor.entries.length > 0 ? (
+                  monitor.entries.map((entry, index) => (
+                    <div
+                      key={`${monitor.agentId}-${task.id}-terminal-${index}`}
+                      className="whitespace-pre-wrap break-words border-b border-white/[0.035] py-1.5"
+                    >
+                      {formatTerminalEntry(entry)}
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-white/35">Waiting for terminal output…</div>
+                )}
+              </div>
+            )}
+
+            <footer className="flex shrink-0 items-center justify-between border-t border-white/8 bg-[#0e639c] px-5 py-2 font-mono text-[10px] text-white/90">
+              <span>{monitor.agentName} · Hermes Kanban worker</span>
+              <span>
+                {monitor.updatedAt
+                  ? `Updated ${new Date(monitor.updatedAt).toLocaleTimeString()}`
+                  : "Waiting for activity timestamp"}
+              </span>
+            </footer>
+          </main>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function useBrowserPreviewScreenshot(params: {
   browserUrl: string | null;
@@ -284,11 +532,26 @@ function MonitorBrowserContent({
 
 export function MonitorImmersiveContent({
   monitor,
+  monitors = [],
+  onAgentSelect,
 }: {
   monitor: OfficeDeskMonitor;
+  monitors?: OfficeDeskMonitor[];
+  onAgentSelect?: (agentId: string) => void;
 }) {
   const browserUrl = monitor.mode === "browser" ? monitor.browserUrl : null;
   const prefersScreenshot = shouldPreferBrowserScreenshot(browserUrl);
+
+  if (monitor.task) {
+    return (
+      <KanbanTaskMonitor
+        key={`${monitor.agentId}:${monitor.task.id}`}
+        monitor={monitor}
+        monitors={monitors}
+        onAgentSelect={onAgentSelect}
+      />
+    );
+  }
 
   if (monitor.mode === "browser" && browserUrl) {
     return (
@@ -321,13 +584,11 @@ export function MonitorImmersiveContent({
           </div>
         </div>
         <div className="flex min-h-0 flex-1">
-          <div className="flex w-[54px] flex-col items-center gap-3 border-r border-white/6 bg-[#18191d] py-4">
-            <div className="h-8 w-8 rounded-lg bg-white/8 ring-1 ring-white/6" />
-            <div className="h-8 w-8 rounded-lg bg-[#2b2d31]" />
-            <div className="h-8 w-8 rounded-lg bg-[#2b2d31]" />
-            <div className="h-8 w-8 rounded-lg bg-[#2b2d31]" />
-            <div className="mt-auto h-8 w-8 rounded-lg bg-[#2b2d31]" />
-          </div>
+          <MonitorAgentRail
+            activeAgentId={monitor.agentId}
+            monitors={monitors}
+            onAgentSelect={onAgentSelect}
+          />
           <div className="flex w-[240px] flex-col border-r border-white/6 bg-[#1f2024]">
             <div className="border-b border-white/6 px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-white/45">
               Hermes-Control-Center

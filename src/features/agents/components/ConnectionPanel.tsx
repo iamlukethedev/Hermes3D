@@ -38,10 +38,14 @@ export const ConnectionPanel = ({
   const isConnecting = status === "connecting";
   const tokenOptional =
     selectedAdapterType === "hermes" ||
+    selectedAdapterType === "hermes-agent" ||
     selectedAdapterType === "demo" ||
     selectedAdapterType === "local" ||
     selectedAdapterType === "hermes3d" ||
     selectedAdapterType === "custom";
+  const applyHermesAgentPreset = () => {
+    onAdapterTypeChange("hermes-agent");
+  };
   const applyDemoPreset = () => {
     onAdapterTypeChange("demo");
   };
@@ -133,6 +137,13 @@ export const ConnectionPanel = ({
         {selectedAdapterHint}
       </div>
       <div className="flex flex-wrap gap-2">
+        <button
+          className="ui-btn-secondary px-3 py-1.5 text-[11px] font-semibold tracking-[0.05em]"
+          type="button"
+          onClick={applyHermesAgentPreset}
+        >
+          Hermes Agent
+        </button>
         <button
           className="ui-btn-secondary px-3 py-1.5 text-[11px] font-semibold tracking-[0.05em]"
           type="button"

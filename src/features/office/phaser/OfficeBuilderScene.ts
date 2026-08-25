@@ -91,14 +91,19 @@ export const createOfficeBuilderScene = (params: {
           transform.setPosition(object.x, object.y);
           transform.setAngle(object.rotation);
 
-          if (existing instanceof PhaserLib.GameObjects.Rectangle) {
-            existing.setSize(32, 32);
-            existing.setStrokeStyle(
-              this.selected.has(object.id) ? 2 : 0,
-              0x79e5ff,
-              1,
-            );
-            existing.setFillStyle(0x4f80af, 0.95);
+          if (
+            existing instanceof PhaserLib.GameObjects.Rectangle &&
+            (existing as any).geom
+          ) {
+            try {
+              existing.setSize(32, 32);
+              existing.setStrokeStyle(
+                this.selected.has(object.id) ? 2 : 0,
+                0x79e5ff,
+                1,
+              );
+              existing.setFillStyle(0x4f80af, 0.95);
+            } catch {}
           } else if (existing instanceof PhaserLib.GameObjects.Image) {
             existing.setAlpha(this.selected.has(object.id) ? 0.8 : 1);
           }

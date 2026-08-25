@@ -1,9 +1,31 @@
 const http = require("node:http");
 const https = require("node:https");
+const fs = require("node:fs");
+const path = require("node:path");
 const next = require("next");
+
+// Load .env variables into process.env at startup
+const envPath = path.join(__dirname, "..", ".env");
+if (fs.existsSync(envPath)) {
+  const content = fs.readFileSync(envPath, "utf8");
+  for (const line of content.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const eqIdx = trimmed.indexOf("=");
+    if (eqIdx === -1) continue;
+    const key = trimmed.slice(0, eqIdx).trim();
+    const val = trimmed.slice(eqIdx + 1).trim();
+    if (process.env[key] === undefined) {
+      process.env[key] = val;
+    }
+  }
+}
 
 const { createAccessGate } = require("./access-gate");
 const { createGatewayProxy } = require("./gateway-proxy");
+const {
+  startReadableHermesContainerNameSync,
+} = require("./hermes-agent/docker-names");
 const { assertPublicHostAllowed, resolveHosts } = require("./network-policy");
 const { loadUpstreamGatewaySettings } = require("./studio-settings");
 
@@ -177,6 +199,7 @@ async function main() {
   const protocol = useHttps ? "https" : "http";
   const browserUrl = `${protocol}://${hostForBrowser}:${port}`;
   console.info(`Open in browser: ${browserUrl}`);
+  startReadableHermesContainerNameSync();
   if (useHttps) {
     console.info("HTTPS mode: self-signed cert in use. You may need to accept a browser security warning once.");
     console.info(`Spotify redirect URI: ${browserUrl}/office`);

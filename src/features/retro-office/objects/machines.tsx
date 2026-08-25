@@ -2500,3 +2500,313 @@ export function ArtRackModel({
     </group>
   );
 }
+
+export function InteractivePresentationScreenModel({
+  item,
+  isSelected,
+  isHovered,
+  editMode,
+  onPointerDown,
+  onPointerOver,
+  onPointerOut,
+  onClick,
+}: InteractiveFurnitureModelProps) {
+  const [wx, , wz] = toWorld(item.x, item.y);
+  const { width, height } = getItemBaseSize(item);
+  const widthWorld = width * SCALE;
+  const depthWorld = height * SCALE;
+  const rotY = getItemRotationRadians(item);
+  const highlightColor = isSelected
+    ? "#fbbf24"
+    : isHovered && editMode
+      ? "#38bdf8"
+      : "#000000";
+  const highlightIntensity = isSelected ? 0.35 : isHovered && editMode ? 0.18 : 0;
+  const metal = useMemo(() => getBrushedMetalTextures(), []);
+
+  return (
+    <group
+      position={[wx, 0, wz]}
+      onPointerDown={(event) => {
+        event.stopPropagation();
+        onPointerDown(item._uid);
+      }}
+      onPointerOver={(event) => {
+        event.stopPropagation();
+        onPointerOver(item._uid);
+      }}
+      onPointerOut={(event) => {
+        event.stopPropagation();
+        onPointerOut();
+      }}
+      onClick={(event) => {
+        event.stopPropagation();
+        onClick?.(item._uid);
+      }}
+    >
+      <group position={[widthWorld / 2, 0, depthWorld / 2]} rotation={[0, rotY, 0]}>
+        {/* Wall Frame / Chassis */}
+        <mesh position={[0, 1.2, 0]} castShadow receiveShadow>
+          <boxGeometry args={[widthWorld, 0.72, depthWorld * 0.9]} />
+          <meshStandardMaterial
+            color="#090d16"
+            map={metal.map}
+            roughnessMap={metal.roughnessMap}
+            metalness={0.85}
+            roughness={0.3}
+            emissive={highlightColor}
+            emissiveIntensity={highlightIntensity}
+          />
+        </mesh>
+
+        {/* Outer Silver Bezel */}
+        <mesh position={[0, 1.2, depthWorld * 0.46]}>
+          <boxGeometry args={[widthWorld * 0.98, 0.7, 0.01]} />
+          <meshStandardMaterial color="#334155" metalness={0.9} roughness={0.2} />
+        </mesh>
+
+        {/* Display Glass Panel */}
+        <mesh position={[0, 1.2, depthWorld * 0.48]}>
+          <planeGeometry args={[widthWorld * 0.95, 0.66]} />
+          <meshStandardMaterial
+            color="#040814"
+            emissive="#082f49"
+            emissiveIntensity={0.25}
+            roughness={0.1}
+          />
+        </mesh>
+
+        {/* Slide Header Bar */}
+        <group position={[0, 1.44, depthWorld * 0.49]}>
+          <mesh>
+            <planeGeometry args={[widthWorld * 0.92, 0.1]} />
+            <meshStandardMaterial color="#0369a1" emissive="#0284c7" emissiveIntensity={0.4} />
+          </mesh>
+          <Text
+            position={[0, 0, 0.005]}
+            fontSize={0.042}
+            color="#f0f9ff"
+            anchorX="center"
+            anchorY="middle"
+          >
+            CRUSH ALL-HANDS // SPRINT ROADMAP
+          </Text>
+        </group>
+
+        {/* Slide Bullet Cards */}
+        {[
+          { text: "1. SPEED DATING: SOLD OUT (14/14)", y: 1.32, color: "#38bdf8" },
+          { text: "2. CONNECT BETA: WAVE 1 DISPATCH", y: 1.22, color: "#34d399" },
+          { text: "3. THERMAL PRINT & SUMUP: LIVE", y: 1.12, color: "#fbbf24" },
+          { text: "4. ARCHITECTURE: MULTI-AGENT V2", y: 1.02, color: "#c084fc" },
+        ].map((item, idx) => (
+          <group key={idx} position={[0, item.y, depthWorld * 0.49]}>
+            <mesh position={[-widthWorld * 0.42, 0, 0]}>
+              <planeGeometry args={[0.02, 0.04]} />
+              <meshStandardMaterial color={item.color} emissive={item.color} emissiveIntensity={0.8} />
+            </mesh>
+            <Text
+              position={[-widthWorld * 0.38, 0, 0.005]}
+              fontSize={0.032}
+              color="#e2e8f0"
+              anchorX="left"
+              anchorY="middle"
+            >
+              {item.text}
+            </Text>
+          </group>
+        ))}
+
+        {/* Screen Bottom LED Glow Strip */}
+        <mesh position={[0, 0.85, depthWorld * 0.46]}>
+          <boxGeometry args={[widthWorld * 0.94, 0.015, 0.01]} />
+          <meshStandardMaterial color="#38bdf8" emissive="#38bdf8" emissiveIntensity={1.5} />
+        </mesh>
+      </group>
+    </group>
+  );
+}
+
+export function InteractiveMetricsBoardModel({
+  item,
+  isSelected,
+  isHovered,
+  editMode,
+  onPointerDown,
+  onPointerOver,
+  onPointerOut,
+  onClick,
+}: InteractiveFurnitureModelProps) {
+  const [wx, , wz] = toWorld(item.x, item.y);
+  const { width, height } = getItemBaseSize(item);
+  const widthWorld = width * SCALE;
+  const depthWorld = height * SCALE;
+  const rotY = getItemRotationRadians(item);
+  const highlightColor = isSelected
+    ? "#fbbf24"
+    : isHovered && editMode
+      ? "#10b981"
+      : "#000000";
+  const highlightIntensity = isSelected ? 0.35 : isHovered && editMode ? 0.18 : 0;
+  const metal = useMemo(() => getBrushedMetalTextures(), []);
+
+  return (
+    <group
+      position={[wx, 0, wz]}
+      onPointerDown={(event) => {
+        event.stopPropagation();
+        onPointerDown(item._uid);
+      }}
+      onPointerOver={(event) => {
+        event.stopPropagation();
+        onPointerOver(item._uid);
+      }}
+      onPointerOut={(event) => {
+        event.stopPropagation();
+        onPointerOut();
+      }}
+      onClick={(event) => {
+        event.stopPropagation();
+        onClick?.(item._uid);
+      }}
+    >
+      <group position={[widthWorld / 2, 0, depthWorld / 2]} rotation={[0, rotY, 0]}>
+        {/* Wall Frame */}
+        <mesh position={[0, 1.15, 0]} castShadow receiveShadow>
+          <boxGeometry args={[widthWorld, 0.65, depthWorld * 0.9]} />
+          <meshStandardMaterial
+            color="#0b1118"
+            map={metal.map}
+            roughnessMap={metal.roughnessMap}
+            metalness={0.85}
+            roughness={0.3}
+            emissive={highlightColor}
+            emissiveIntensity={highlightIntensity}
+          />
+        </mesh>
+
+        {/* Display Glass */}
+        <mesh position={[0, 1.15, depthWorld * 0.48]}>
+          <planeGeometry args={[widthWorld * 0.94, 0.6]} />
+          <meshStandardMaterial
+            color="#030b08"
+            emissive="#064e3b"
+            emissiveIntensity={0.25}
+            roughness={0.1}
+          />
+        </mesh>
+
+        {/* Title */}
+        <group position={[0, 1.36, depthWorld * 0.49]}>
+          <Text
+            fontSize={0.038}
+            color="#34d399"
+            anchorX="center"
+            anchorY="middle"
+          >
+            VENTURE METRICS // FINOPS LIVE
+          </Text>
+        </group>
+
+        {/* Metric 1: Verified Pool */}
+        <group position={[0, 1.23, depthWorld * 0.49]}>
+          <Text
+            position={[-widthWorld * 0.42, 0, 0]}
+            fontSize={0.03}
+            color="#94a3b8"
+            anchorX="left"
+            anchorY="middle"
+          >
+            VERIFIED POOL:
+          </Text>
+          <Text
+            position={[widthWorld * 0.42, 0, 0]}
+            fontSize={0.032}
+            color="#34d399"
+            anchorX="right"
+            anchorY="middle"
+          >
+            589 MEMBERS
+          </Text>
+          {/* Meter Bar */}
+          <mesh position={[0, -0.03, 0]}>
+            <planeGeometry args={[widthWorld * 0.84, 0.015]} />
+            <meshStandardMaterial color="#064e3b" />
+          </mesh>
+          <mesh position={[-widthWorld * 0.1, -0.03, 0.001]}>
+            <planeGeometry args={[widthWorld * 0.64, 0.015]} />
+            <meshStandardMaterial color="#10b981" emissive="#10b981" emissiveIntensity={0.8} />
+          </mesh>
+        </group>
+
+        {/* Metric 2: MRR Goal */}
+        <group position={[0, 1.10, depthWorld * 0.49]}>
+          <Text
+            position={[-widthWorld * 0.42, 0, 0]}
+            fontSize={0.03}
+            color="#94a3b8"
+            anchorX="left"
+            anchorY="middle"
+          >
+            MONTHLY RUN-RATE:
+          </Text>
+          <Text
+            position={[widthWorld * 0.42, 0, 0]}
+            fontSize={0.032}
+            color="#fbbf24"
+            anchorX="right"
+            anchorY="middle"
+          >
+            EUR 20K TARGET
+          </Text>
+          {/* Meter Bar */}
+          <mesh position={[0, -0.03, 0]}>
+            <planeGeometry args={[widthWorld * 0.84, 0.015]} />
+            <meshStandardMaterial color="#78350f" />
+          </mesh>
+          <mesh position={[-widthWorld * 0.18, -0.03, 0.001]}>
+            <planeGeometry args={[widthWorld * 0.48, 0.015]} />
+            <meshStandardMaterial color="#f59e0b" emissive="#f59e0b" emissiveIntensity={0.8} />
+          </mesh>
+        </group>
+
+        {/* Metric 3: System Status */}
+        <group position={[0, 0.97, depthWorld * 0.49]}>
+          <Text
+            position={[-widthWorld * 0.42, 0, 0]}
+            fontSize={0.03}
+            color="#94a3b8"
+            anchorX="left"
+            anchorY="middle"
+          >
+            SUMUP & APPS:
+          </Text>
+          <Text
+            position={[widthWorld * 0.42, 0, 0]}
+            fontSize={0.032}
+            color="#38bdf8"
+            anchorX="right"
+            anchorY="middle"
+          >
+            ONLINE (100%)
+          </Text>
+          {/* Meter Bar */}
+          <mesh position={[0, -0.03, 0]}>
+            <planeGeometry args={[widthWorld * 0.84, 0.015]} />
+            <meshStandardMaterial color="#082f49" />
+          </mesh>
+          <mesh position={[0, -0.03, 0.001]}>
+            <planeGeometry args={[widthWorld * 0.84, 0.015]} />
+            <meshStandardMaterial color="#0284c7" emissive="#0284c7" emissiveIntensity={0.8} />
+          </mesh>
+        </group>
+
+        {/* Bottom Emerald Neon Glow Strip */}
+        <mesh position={[0, 0.84, depthWorld * 0.46]}>
+          <boxGeometry args={[widthWorld * 0.94, 0.015, 0.01]} />
+          <meshStandardMaterial color="#10b981" emissive="#10b981" emissiveIntensity={1.5} />
+        </mesh>
+      </group>
+    </group>
+  );
+}
