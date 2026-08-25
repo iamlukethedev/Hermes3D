@@ -28,6 +28,7 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
 import { SettingsPanel } from "@/features/office/components/panels/SettingsPanel";
+import type { OfficeRenderMode } from "@/features/office/renderMode";
 import { AtmImmersiveScreen } from "@/features/office/screens/AtmImmersiveScreen";
 import { GithubImmersiveScreen } from "@/features/office/screens/GithubImmersiveScreen";
 import { KanbanImmersiveScreen } from "@/features/office/screens/KanbanImmersiveScreen";
@@ -2600,6 +2601,8 @@ export function RetroOffice3D({
   onGatewayTokenChange,
   onGatewayAdapterTypeChange,
   onOpenOnboarding,
+  renderMode = "3d",
+  onRenderModeChange,
   atmAnalytics = null,
   feedEvents = EMPTY_FEED_EVENTS,
   gatewayStatus = "disconnected",
@@ -2716,6 +2719,8 @@ export function RetroOffice3D({
   onGatewayTokenChange?: (value: string) => void;
   onGatewayAdapterTypeChange?: (value: StudioGatewayAdapterType) => void;
   onOpenOnboarding?: () => void;
+  renderMode?: OfficeRenderMode;
+  onRenderModeChange?: (mode: OfficeRenderMode) => void;
   atmAnalytics?: OfficeUsageAnalyticsParams | null;
   feedEvents?: FeedEvent[];
   gatewayStatus?: string;
@@ -7586,6 +7591,15 @@ export function RetroOffice3D({
               <span>Add</span>
             </button>
           ) : null}
+          {onRenderModeChange ? (
+            <button
+              onClick={() => onRenderModeChange("2d")}
+              title="Switch to the 2D pixel office"
+              className="flex h-7 items-center justify-center gap-1 rounded-md border border-white/15 bg-[#120e08]/92 px-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/75 transition-all backdrop-blur-sm hover:border-cyan-400/45 hover:text-cyan-100"
+            >
+              <span>2D</span>
+            </button>
+          ) : null}
           <div
             className={`flex h-7 items-center rounded-md border px-2 text-[10px] font-mono uppercase tracking-[0.12em] ${
               gatewayStatus === "connected"
@@ -7692,6 +7706,8 @@ export function RetroOffice3D({
               <SettingsPanel
                 graphicsQuality={graphicsQuality}
                 onGraphicsQualityChange={setGraphicsQuality}
+                renderMode={renderMode}
+                onRenderModeChange={onRenderModeChange}
                 gatewayStatus={gatewayStatus}
                 gatewayUrl={gatewayUrl}
                 gatewayToken={gatewayToken}

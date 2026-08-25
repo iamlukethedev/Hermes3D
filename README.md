@@ -31,6 +31,7 @@ Built and maintained by **LukeTheDev**. Follow on X: [@iamlukethedev](https://x.
 ## What you can do with Hermes3D
 
 - **Watch your AI agents work in real time** inside a shared 3D office.
+- **Switch to the 2D pixel office** — a Gather-style pixel-art view of the same live agents for low-power machines (Settings → Office renderer, or the `2D` button in the office toolbar).
 - **Run standups** with agents connected to GitHub and Jira.
 - **Review pull requests** from inside the office.
 - **Monitor QA pipelines** and logs without leaving the workspace.
@@ -237,7 +238,7 @@ Alternative with SSH:
 - Next.js App Router, React, and TypeScript for the main web application.
 - A custom Node server for the Studio-side WebSocket proxy.
 - Three.js, React Three Fiber, and Drei for the 3D office experience.
-- Phaser for office/viewer-builder workflows and related interactive surfaces.
+- Phaser for the 2D pixel office, office/viewer-builder workflows, and related interactive surfaces.
 - Vitest for unit tests and Playwright for end-to-end coverage.
 
 ## Configuration

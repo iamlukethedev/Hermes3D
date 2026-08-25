@@ -12,6 +12,12 @@ import { useRouter } from "next/navigation";
 import { MessageSquare, ChevronDown, ChevronLeft, ChevronRight, Mic } from "lucide-react";
 import { RetroOffice3D } from "@/features/retro-office/RetroOffice3D";
 import type { OfficeAgent } from "@/features/retro-office/core/types";
+import { PixelOffice2D } from "@/features/pixel-office/PixelOffice2D";
+import {
+  resolveInitialOfficeRenderMode,
+  saveOfficeRenderMode,
+  type OfficeRenderMode,
+} from "@/features/office/renderMode";
 import { RunningAvatarLoader } from "@/features/agents/components/RunningAvatarLoader";
 import { GatewayConnectScreen } from "@/features/agents/components/GatewayConnectScreen";
 import { useAgentStore, type AgentState } from "@/features/agents/state/store";
@@ -1063,6 +1069,16 @@ export function OfficeScreen({
   const [gatewayModels, setGatewayModels] = useState<GatewayModelChoice[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [marketplaceOpen, setMarketplaceOpen] = useState(false);
+  // Office renderer preference (3D immersive vs. 2D pixel). Resolved after
+  // mount so SSR markup stays deterministic.
+  const [officeRenderMode, setOfficeRenderMode] = useState<OfficeRenderMode>("3d");
+  useEffect(() => {
+    setOfficeRenderMode(resolveInitialOfficeRenderMode());
+  }, []);
+  const handleOfficeRenderModeChange = useCallback((mode: OfficeRenderMode) => {
+    saveOfficeRenderMode(mode);
+    setOfficeRenderMode(mode);
+  }, []);
   const [kanbanInstallPromptOpen, setKanbanInstallPromptOpen] = useState(false);
   const [kanbanInstallProgress, setKanbanInstallProgress] = useState<{
     active: boolean;
@@ -4465,6 +4481,72 @@ export function OfficeScreen({
         </div>
       ) : null}
       <section className="relative h-full min-h-0 min-w-0 overflow-hidden">
+        {officeRenderMode === "2d" ? (
+        <PixelOffice2D
+          agents={allVisibleAgents}
+          animationState={officeAnimationState}
+          streamingTextByAgentId={streamingTextByAgentId}
+          renderMode={officeRenderMode}
+          onRenderModeChange={handleOfficeRenderModeChange}
+          onAgentChatSelect={(agentId) => {
+            handleOpenAgentChat(agentId);
+          }}
+          onAddAgent={handleOpenCreateAgentWizard}
+          onAgentEdit={(agentId) => {
+            openAgentEditor(agentId, "avatar");
+          }}
+          onAgentDelete={(agentId) => {
+            void handleDeleteAgent(agentId);
+          }}
+          onJukeboxInteract={() => {
+            setJukeboxOpen(true);
+          }}
+          onKanbanInteract={() => {
+            setKanbanInstallPromptOpen(true);
+          }}
+          officeTitle={officeTitle}
+          officeTitleLoaded={officeTitleLoaded}
+          onOfficeTitleChange={setOfficeTitle}
+          gatewayStatus={status}
+          gatewayUrl={gatewayUrl}
+          gatewayToken={token}
+          selectedAdapterType={selectedAdapterType}
+          activeAdapterType={activeAdapterType}
+          onGatewayDisconnect={disconnect}
+          onGatewayConnect={() => void connect()}
+          onGatewayUrlChange={setGatewayUrl}
+          onGatewayTokenChange={setToken}
+          onGatewayAdapterTypeChange={setSelectedAdapterType}
+          onOpenOnboarding={handleOpenOnboarding}
+          remoteOfficeEnabled={remoteOfficeEnabled}
+          remoteOfficeSourceKind={remoteOfficeSourceKind}
+          remoteOfficeLabel={remoteOfficeLabel}
+          remoteOfficePresenceUrl={remoteOfficePresenceUrl}
+          remoteOfficeGatewayUrl={remoteOfficeGatewayUrl}
+          remoteOfficeTokenConfigured={remoteOfficeTokenConfigured}
+          onRemoteOfficeEnabledChange={setRemoteOfficeEnabled}
+          onRemoteOfficeSourceKindChange={setRemoteOfficeSourceKind}
+          onRemoteOfficeLabelChange={setRemoteOfficeLabel}
+          onRemoteOfficePresenceUrlChange={setRemoteOfficePresenceUrl}
+          onRemoteOfficeGatewayUrlChange={setRemoteOfficeGatewayUrl}
+          onRemoteOfficeTokenChange={setRemoteOfficeToken}
+          voiceRepliesEnabled={voiceRepliesEnabled}
+          voiceRepliesVoiceId={voiceRepliesVoiceId}
+          voiceRepliesSpeed={voiceRepliesSpeed}
+          voiceRepliesLoaded={voiceRepliesLoaded}
+          onVoiceRepliesToggle={setVoiceRepliesEnabled}
+          onVoiceRepliesVoiceChange={setVoiceRepliesVoiceId}
+          onVoiceRepliesSpeedChange={setVoiceRepliesSpeed}
+          onVoiceRepliesPreview={(voiceId, voiceName) => {
+            void previewVoiceReply({
+              text: `Hi, how can I help you? My name is ${voiceName}.`,
+              provider: voiceRepliesPreference.provider,
+              voiceId,
+              speed: voiceRepliesSpeed,
+            });
+          }}
+        />
+        ) : (
         <RetroOffice3D
           agents={allVisibleAgents}
           storageNamespace={activeFloor.id}
@@ -4532,6 +4614,8 @@ export function OfficeScreen({
           onGatewayTokenChange={setToken}
           onGatewayAdapterTypeChange={setSelectedAdapterType}
           onOpenOnboarding={handleOpenOnboarding}
+          renderMode={officeRenderMode}
+          onRenderModeChange={handleOfficeRenderModeChange}
           feedEvents={feedEvents}
           gatewayStatus={status}
           runCountByAgentId={runCountByAgentId}
@@ -4611,6 +4695,7 @@ export function OfficeScreen({
             void taskBoard.refreshCronJobs();
           }}
         />
+        )}
         {jukeboxOpen ? (
           soundhermesReady ? (
             <JukeboxPanel
