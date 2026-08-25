@@ -25,6 +25,7 @@ import {
 import type { RunRecord } from "@/features/office/hooks/useRunLog";
 import { type OfficeStandupController } from "@/features/office/hooks/useOfficeStandupController";
 import { buildStandupTaskCandidates } from "@/features/office/tasks/standupDispatch";
+import type { StandupMeeting } from "@/lib/office/standup/types";
 import { extractText, isHeartbeatPrompt } from "@/lib/text/message-extract";
 import {
   formatCronPayload,
@@ -543,6 +544,15 @@ const compareDuplicatePriority = (
   return Date.parse(right.updatedAt) - Date.parse(left.updatedAt);
 };
 
+export const shouldDispatchCompletedStandup = (
+  previous: { id: string; phase: string } | null,
+  meeting: Pick<StandupMeeting, "id" | "phase" | "taskDispatch">,
+) =>
+  meeting.phase === "complete" &&
+  meeting.taskDispatch?.status !== "dispatched" &&
+  previous?.id === meeting.id &&
+  previous.phase !== "complete";
+
 /**
  * Only locally mirrored Hermes events need title-based de-duplication.
  * Backend Kanban cards already have stable ids and idempotency keys; treating
@@ -1057,12 +1067,14 @@ export const useTaskBoardController = ({
     }
 
     const previous = observedStandupMeetingRef.current;
-    const reachedCompletionHere =
-      previous?.id === meeting.id && previous.phase !== "complete";
-    const recoverableCompletedHandoff =
-      meeting.taskDispatch?.status === "pending" ||
-      meeting.taskDispatch?.status === "failed";
-    if (!reachedCompletionHere && !recoverableCompletedHandoff) return;
+    const reachedCompletionHere = shouldDispatchCompletedStandup(previous, meeting);
+    if (!reachedCompletionHere) {
+      // A restart is a read-only reconnection. Never replay an old pending or
+      // failed handoff merely because the browser mounted again; an operator
+      // must explicitly retry it from the durable Kanban state.
+      observedStandupMeetingRef.current = { id: meeting.id, phase: meeting.phase };
+      return;
+    }
     if (meeting.taskDispatch?.status === "dispatched") {
       observedStandupMeetingRef.current = { id: meeting.id, phase: meeting.phase };
       return;
@@ -1087,14 +1099,12 @@ export const useTaskBoardController = ({
         });
         const candidates = buildStandupTaskCandidates(meeting);
         for (const candidate of candidates) {
-          const candidateTitle = candidate.input.title.trim().toLowerCase();
           const existingCard = stateRef.current.cards.find(
             (c) =>
               !c.isArchived &&
               c.status !== "done" &&
               c.assignedAgentId === candidate.agentId &&
-              (c.title.trim().toLowerCase() === candidateTitle ||
-                c.id === candidate.input.sourceEventId),
+              c.sourceEventId === candidate.input.sourceEventId,
           );
           if (existingCard) {
             try {

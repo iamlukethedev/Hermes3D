@@ -9,6 +9,7 @@ import {
   findDuplicateMirroredTaskCardIds,
   isActionableTaskRequest,
   parseExplicitTaskEvent,
+  shouldDispatchCompletedStandup,
   syncCardWithLinkedRun,
 } from "@/features/office/tasks/useTaskBoardController";
 
@@ -22,6 +23,34 @@ const makeAgent = (overrides: Partial<AgentState> = {}) =>
   }) as AgentState;
 
 describe("task board controller helpers", () => {
+  it("never replays a completed standup handoff just because the UI restarted", () => {
+    const meeting = {
+      id: "standup-1",
+      phase: "complete" as const,
+      taskDispatch: {
+        status: "failed" as const,
+        queuedAgentIds: ["agent-1"],
+        blockedAgentIds: [],
+        updatedAt: "2026-08-25T19:00:00.000Z",
+        error: "backend unavailable",
+      },
+    };
+
+    expect(shouldDispatchCompletedStandup(null, meeting)).toBe(false);
+    expect(
+      shouldDispatchCompletedStandup(
+        { id: "standup-1", phase: "in_progress" },
+        meeting,
+      ),
+    ).toBe(true);
+    expect(
+      shouldDispatchCompletedStandup(
+        { id: "standup-1", phase: "complete" },
+        meeting,
+      ),
+    ).toBe(false);
+  });
+
   it("never archives backend Kanban cards as title duplicates", () => {
     const makeCard = (id: string, status: "working" | "done") => ({
       id,
