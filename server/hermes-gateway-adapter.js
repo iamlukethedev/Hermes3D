@@ -26,6 +26,7 @@ const https = require("https");
 const fs = require("fs");
 const path = require("path");
 const { WebSocketServer } = require("ws");
+const { isManagedFleetAgent, managedProfileWriteError } = require("./managed-fleet");
 
 function loadDotenvFile(filePath) {
   if (!fs.existsSync(filePath)) return;
@@ -881,7 +882,11 @@ async function handleMethod(method, params, id, sendEvent) {
     }
 
     case "agents.files.set": {
-      const key = `${p.agentId || AGENT_ID}/${p.name || ""}`;
+      const targetAgentId = p.agentId || AGENT_ID;
+      if (isManagedFleetAgent(targetAgentId)) {
+        return resError(id, -32003, managedProfileWriteError(targetAgentId));
+      }
+      const key = `${targetAgentId}/${p.name || ""}`;
       agentFiles.set(key, typeof p.content === "string" ? p.content : "");
       return resOk(id, {});
     }

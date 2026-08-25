@@ -124,7 +124,10 @@ export type OfficeStandupController = {
     agentId: string,
     patch: Partial<StudioStandupPreferencePublic["manualByAgentId"][string]>
   ) => Promise<void>;
-  startMeeting: (trigger?: "manual" | "scheduled") => Promise<void>;
+  startMeeting: (
+    trigger?: "manual" | "scheduled",
+    overrideAgents?: StandupAgentSnapshot[]
+  ) => Promise<void>;
   reportArrivals: (arrivedAgentIds: string[]) => Promise<void>;
   openBoardByDefault: boolean;
   refreshMeeting: () => Promise<void>;
@@ -132,9 +135,12 @@ export type OfficeStandupController = {
 
 export const useOfficeStandupController = (params: {
   gatewayUrl: string;
-  agents: StandupAgentSnapshot[];
+  agents: StandupAgentSnapshot[] | (() => StandupAgentSnapshot[]);
 }): OfficeStandupController => {
   const { gatewayUrl, agents } = params;
+  const getAgents = useCallback(() => {
+    return typeof agents === "function" ? agents() : agents;
+  }, [agents]);
   const [config, setConfig] = useState<StudioStandupPreferencePublic | null>(null);
   const [meeting, setMeeting] = useState<StandupMeeting | null>(null);
   const [loading, setLoading] = useState(true);
@@ -277,8 +283,13 @@ export const useOfficeStandupController = (params: {
   );
 
   const startMeeting = useCallback(
-    async (trigger: "manual" | "scheduled" = "manual") => {
+    async (
+      trigger: "manual" | "scheduled" = "manual",
+      overrideAgents?: StandupAgentSnapshot[]
+    ) => {
       if (!gatewayUrl.trim()) return;
+      const effectiveAgents =
+        overrideAgents && overrideAgents.length > 0 ? overrideAgents : getAgents();
       const payload = await fetchJson<StandupMeetingResponse>(
         "/api/office/standup/run",
         {
@@ -287,7 +298,7 @@ export const useOfficeStandupController = (params: {
           body: JSON.stringify({
             gatewayUrl,
             trigger,
-            agents,
+            agents: effectiveAgents,
           }),
         }
       );
@@ -307,7 +318,7 @@ export const useOfficeStandupController = (params: {
       }
       lastArrivalsRef.current = "";
     },
-    [agents, gatewayUrl]
+    [gatewayUrl, getAgents]
   );
 
   const reportArrivals = useCallback(async (arrivedAgentIds: string[]) => {

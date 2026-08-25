@@ -317,7 +317,7 @@ export const AgentAvatarPreview3D = ({
           <RunningAvatarLoader size={26} trackWidth={72} label="Loading avatar..." />
         </div>
       ) : null}
-      <Canvas key={profileKey} camera={{ position: [0, 0.7, 2.5], fov: 34 }}>
+      <Canvas camera={{ position: [0, 0.7, 2.5], fov: 34 }}>
         <color attach="background" args={["#070b16"]} />
         <ambientLight intensity={1.4} />
         <directionalLight position={[3, 4, 5]} intensity={2.4} />

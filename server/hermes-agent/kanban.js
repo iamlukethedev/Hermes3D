@@ -44,6 +44,12 @@ const WRITE_STATUS = {
 const asTrimmed = (value) =>
   typeof value === "string" && value.trim() ? value.trim() : "";
 
+const asIdentifier = (value) => {
+  const text = asTrimmed(value);
+  if (text) return text;
+  return typeof value === "number" && Number.isFinite(value) ? String(value) : "";
+};
+
 /** Kanban stores epoch seconds; the office wants ISO strings. */
 const toIsoTime = (seconds) => {
   const numeric = Number(seconds);
@@ -89,12 +95,55 @@ const toHermes3dKanbanTaskRecord = (task) => {
     createdAt,
     updatedAt,
     playbookJobId: null,
-    runId: asTrimmed(task.current_run_id) || null,
+    runId: asIdentifier(task.current_run_id) || null,
     channel: "kanban",
     externalThreadId: asTrimmed(task.session_id) || null,
     lastActivityAt: toIsoTime(task.last_heartbeat_at) ?? updatedAt,
     notes,
     archived: asTrimmed(task.status) === "archived",
+    nativeStatus: asTrimmed(task.status) || null,
+    blockKind: asTrimmed(task.block_kind) || null,
+    blockerReason: asTrimmed(task.last_failure_error) || null,
+  };
+};
+
+const toHermes3dKanbanComment = (comment) => {
+  if (!comment || typeof comment !== "object") return null;
+  const body = asTrimmed(comment.body);
+  if (!body) return null;
+  const createdAt = toIsoTime(comment.created_at);
+  return {
+    id:
+      asIdentifier(comment.id) ||
+      `${createdAt ?? "unknown"}:${asTrimmed(comment.author) || "user"}:${body.slice(0, 32)}`,
+    author: asTrimmed(comment.author) || "user",
+    body,
+    createdAt,
+  };
+};
+
+/** Full task drawer payload from `GET /tasks/{id}` -> office detail shape. */
+const toHermes3dKanbanTaskDetail = (payload) => {
+  const record = toHermes3dKanbanTaskRecord(payload?.task);
+  if (!record) return null;
+  const comments = (Array.isArray(payload?.comments) ? payload.comments : [])
+    .map(toHermes3dKanbanComment)
+    .filter(Boolean);
+  const blockedComment = [...comments]
+    .reverse()
+    .find((comment) => /^BLOCKED\s*:/i.test(comment.body));
+  const blockerReason =
+    record.blockerReason ||
+    (blockedComment ? blockedComment.body.replace(/^BLOCKED\s*:\s*/i, "") : null);
+
+  return {
+    taskId: record.id,
+    nativeStatus: record.nativeStatus,
+    blockKind: record.blockKind,
+    blockerReason,
+    comments,
+    eventCount: Array.isArray(payload?.events) ? payload.events.length : 0,
+    runCount: Array.isArray(payload?.runs) ? payload.runs.length : 0,
   };
 };
 
@@ -129,6 +178,36 @@ const toKanbanPatchBody = (patch) => {
   const status = WRITE_STATUS[asTrimmed(patch?.status)];
   if (status) body.status = status;
   if (patch?.archived === true) body.status = "archived";
+  return body;
+};
+
+/** An office task create request -> the kanban `POST /tasks` body. */
+const toKanbanCreateBody = (input) => {
+  const title = asTrimmed(input?.title);
+  if (!title) return null;
+  const body = { title };
+  if (typeof input?.description === "string") body.body = input.description;
+  const assignee = asTrimmed(input?.assignedAgentId);
+  if (assignee) body.assignee = assignee;
+  const idempotencyKey = asTrimmed(input?.idempotencyKey);
+  if (idempotencyKey) body.idempotency_key = idempotencyKey;
+  const maxRuntimeSeconds = Number(input?.maxRuntimeSeconds);
+  if (Number.isFinite(maxRuntimeSeconds) && maxRuntimeSeconds > 0) {
+    body.max_runtime_seconds = Math.round(maxRuntimeSeconds);
+  }
+  if (input?.goalMode === true) body.goal_mode = true;
+  const goalMaxTurns = Number(input?.goalMaxTurns);
+  if (Number.isFinite(goalMaxTurns) && goalMaxTurns > 0) {
+    body.goal_max_turns = Math.round(goalMaxTurns);
+  }
+  const workspaceKind = asTrimmed(input?.workspaceKind);
+  if (["scratch", "dir", "worktree"].includes(workspaceKind)) {
+    body.workspace_kind = workspaceKind;
+  }
+  const workspacePath = asTrimmed(input?.workspacePath);
+  if (workspacePath) body.workspace_path = workspacePath;
+  const projectId = asTrimmed(input?.projectId);
+  if (projectId) body.project_id = projectId;
   return body;
 };
 
@@ -214,7 +293,9 @@ const kanbanRequest = ({ wsUrl, token, useLoopbackHost, method, path, body }) =>
 module.exports = {
   KANBAN_TASK_ID_PREFIX,
   toHermes3dKanbanTaskRecord,
+  toHermes3dKanbanTaskDetail,
   toHermes3dKanbanTasks,
+  toKanbanCreateBody,
   toKanbanPatchBody,
   kanbanOriginFromWsUrl,
   kanbanRequest,

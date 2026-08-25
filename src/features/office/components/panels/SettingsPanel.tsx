@@ -143,8 +143,9 @@ export function SettingsPanel({
         <div className="mt-3 flex flex-wrap gap-2">
           {(
             [
-              ["demo", "Demo"],
+              ["hermes-agent", "Hermes Agent"],
               ["hermes", "Hermes"],
+              ["demo", "Demo"],
               ["local", "Local"],
               ["hermes3d", "Hermes3D"],
               ["custom", "Custom"],
@@ -177,12 +178,14 @@ export function SettingsPanel({
               value={gatewayUrl ?? ""}
               onChange={(event) => onGatewayUrlChange?.(event.target.value)}
               placeholder={
-                selectedAdapterType === "custom" ||
-                selectedAdapterType === "local"
-                  ? "http://localhost:7770"
-                  : selectedAdapterType === "hermes3d"
-                    ? "http://localhost:3000/api/runtime/custom"
-                  : "ws://localhost:18789"
+                selectedAdapterType === "hermes-agent"
+                  ? "ws://127.0.0.1:9120"
+                  : selectedAdapterType === "custom" ||
+                    selectedAdapterType === "local"
+                    ? "http://localhost:7770"
+                    : selectedAdapterType === "hermes3d"
+                      ? "http://localhost:3000/api/runtime/custom"
+                    : "ws://localhost:18789"
               }
               className="w-full rounded-md border border-cyan-500/10 bg-black/25 px-3 py-2 font-mono text-[11px] text-cyan-100 outline-none transition-colors placeholder:text-cyan-100/30 focus:border-cyan-400/30"
             />

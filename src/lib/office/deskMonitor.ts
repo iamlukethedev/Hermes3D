@@ -28,6 +28,12 @@ export type OfficeDeskMonitor = {
   updatedAt: number | null;
   live: boolean;
   entries: OfficeDeskMonitorEntry[];
+  task: {
+    id: string;
+    title: string;
+    status: string;
+    runId: string | null;
+  } | null;
   editor: {
     fileName: string;
     language: string;
@@ -36,6 +42,15 @@ export type OfficeDeskMonitor = {
     cursorLine: number;
     cursorColumn: number;
   } | null;
+};
+
+export type OfficeDeskMonitorKanbanActivity = {
+  taskId: string;
+  taskTitle: string;
+  taskStatus?: string;
+  runId?: string | null;
+  logContent: string;
+  updatedAt: number | null;
 };
 
 const URL_RE = /\bhttps?:\/\/[^\s<>"'`]+/gi;
@@ -50,6 +65,62 @@ const BROWSER_INTENT_RE =
   /\b(browse|inspect|visit|navigate|open|go to|website|site|page)\b/i;
 const MONITOR_HISTORY_LINE_LIMIT = 160;
 const MONITOR_BROWSER_SCAN_ENTRY_LIMIT = 18;
+const KANBAN_ACTIVITY_ENTRY_LIMIT = 80;
+const TERMINAL_ESCAPE = String.fromCharCode(27);
+const TERMINAL_ESCAPE_RE = new RegExp(
+  `${TERMINAL_ESCAPE}\\[[0-?]*[ -/]*[@-~]`,
+  "g",
+);
+
+const buildKanbanActivityEntries = (
+  activity: OfficeDeskMonitorKanbanActivity,
+): OfficeDeskMonitorEntry[] => {
+  const isLive =
+    !activity.taskStatus?.trim() || activity.taskStatus.trim() === "working";
+  const entries = activity.logContent
+    .replace(TERMINAL_ESCAPE_RE, "")
+    .replace(/\r/g, "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(
+      (line) =>
+        Boolean(line) &&
+        !/^[-─┌┐└┘│#\s]+$/.test(line) &&
+        !/^\++$/.test(line) &&
+        !/^┌─\s*Reasoning\s*─/i.test(line),
+    )
+    .map<OfficeDeskMonitorEntry>((line) => {
+      if (/^Query:\s*/i.test(line)) {
+        return {
+          kind: "user",
+          text: line.replace(/^Query:\s*/i, "").trim(),
+        };
+      }
+      if (line.startsWith("**") && line.endsWith("**")) {
+        return {
+          kind: "thinking",
+          text: line.slice(2, -2).trim(),
+          live: isLive,
+        };
+      }
+      if (line.startsWith("┊") || /^[$⚡📚💻🔎📖🐍]\s/u.test(line)) {
+        return {
+          kind: "tool",
+          text: line.replace(/^┊\s*/, ""),
+          live: isLive,
+        };
+      }
+      return { kind: "assistant", text: line, live: isLive };
+    });
+  if (entries.length > 0) return entries.slice(-KANBAN_ACTIVITY_ENTRY_LIMIT);
+  return [
+    {
+      kind: "user",
+      text: activity.taskTitle,
+      live: isLive,
+    },
+  ];
+};
 
 const extractUrls = (value: string): string[] => {
   const matches = value.match(URL_RE);
@@ -277,6 +348,7 @@ const summarizeMode = (params: {
 
 export const buildOfficeDeskMonitor = (
   agent: AgentState,
+  kanbanActivity: OfficeDeskMonitorKanbanActivity | null = null,
 ): OfficeDeskMonitor => {
   const monitorOutputLines = agent.outputLines.slice(-MONITOR_HISTORY_LINE_LIMIT);
   const chatItems = buildAgentChatItems({
@@ -289,9 +361,25 @@ export const buildOfficeDeskMonitor = (
   const flatEntries = chatItems
     .map(flattenMonitorEntry)
     .filter((entry): entry is OfficeDeskMonitorEntry => Boolean(entry));
-  const latestEntries = flatEntries.slice(-6);
+  const activityEntries = kanbanActivity
+    ? buildKanbanActivityEntries(kanbanActivity)
+    : [];
+  const kanbanTaskStatus = kanbanActivity?.taskStatus?.trim() || "working";
+  const effectiveAgent: AgentState = kanbanActivity
+    ? {
+        ...agent,
+        status: kanbanTaskStatus === "working" ? "running" : "idle",
+        runId: agent.runId ?? kanbanActivity.taskId,
+        latestPreview: `Kanban: ${kanbanActivity.taskTitle}`,
+        lastUserMessage: kanbanActivity.taskTitle,
+      }
+    : agent;
+  const latestEntries = (kanbanActivity ? activityEntries : flatEntries).slice(-6);
+  const visibleEntries = kanbanActivity ? activityEntries : latestEntries;
   const browserScanEntries = flatEntries.slice(-MONITOR_BROWSER_SCAN_ENTRY_LIMIT);
-  const browserUrl =
+  const browserUrl = kanbanActivity
+    ? null
+    :
     [
       agent.lastUserMessage ?? "",
       agent.latestPreview ?? "",
@@ -307,24 +395,42 @@ export const buildOfficeDeskMonitor = (
       .find((value): value is string => Boolean(value)) ??
     null;
   const modeSummary = summarizeMode({
-    agent,
+    agent: effectiveAgent,
     entries: latestEntries,
     browserUrl,
   });
   return {
-    agentId: agent.agentId,
-    agentName: agent.name,
+    agentId: effectiveAgent.agentId,
+    agentName: effectiveAgent.name,
     mode: modeSummary.mode,
     title: modeSummary.title,
     subtitle: modeSummary.subtitle,
     browserUrl,
-    updatedAt: agent.lastActivityAt ?? agent.lastAssistantMessageAt ?? null,
+    updatedAt:
+      kanbanActivity?.updatedAt ??
+      effectiveAgent.lastActivityAt ??
+      effectiveAgent.lastAssistantMessageAt ??
+      null,
     live:
-      agent.status === "running" ||
-      Boolean(agent.streamText) ||
-      Boolean(agent.thinkingTrace) ||
+      effectiveAgent.status === "running" ||
+      Boolean(effectiveAgent.streamText) ||
+      Boolean(effectiveAgent.thinkingTrace) ||
       latestEntries.some((entry) => entry.live),
-    entries: latestEntries,
-    editor: modeSummary.mode === "coding" ? deriveEditorDocument({ agent, entries: flatEntries }) : null,
+    entries: visibleEntries,
+    task: kanbanActivity
+      ? {
+          id: kanbanActivity.taskId,
+          title: kanbanActivity.taskTitle,
+          status: kanbanTaskStatus,
+          runId: kanbanActivity.runId?.trim() || null,
+        }
+      : null,
+    editor:
+      !kanbanActivity && modeSummary.mode === "coding"
+        ? deriveEditorDocument({
+            agent: effectiveAgent,
+            entries: kanbanActivity ? activityEntries : flatEntries,
+          })
+        : null,
   };
 };

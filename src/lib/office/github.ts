@@ -213,6 +213,8 @@ const parseRemoteUrl = (remoteUrl: string): string | null => {
 };
 
 export const resolveCurrentRepoSlug = (): string | null => {
+  const envSlug = process.env.HERMES3D_GITHUB_REPO?.trim() || process.env.GITHUB_REPOSITORY?.trim();
+  if (envSlug) return envSlug;
   try {
     const remoteUrl = runTextCommand("git", ["remote", "get-url", "origin"], "git remote get-url origin");
     return parseRemoteUrl(remoteUrl);

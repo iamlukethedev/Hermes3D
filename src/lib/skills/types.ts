@@ -172,7 +172,8 @@ export const loadAgentSkillStatus = async (
     agentId: resolvedAgentId,
   });
   const workspaceDir = report.workspaceDir?.trim() ?? "";
-  if (!workspaceDir || !isLikelyRootWorkspace(workspaceDir)) {
+  const managedSkillsDir = report.managedSkillsDir?.trim() ?? "";
+  if (workspaceDir && !isLikelyRootWorkspace(workspaceDir)) {
     return report;
   }
   const recoveredWorkspace = await resolveWorkspaceFromAgentFiles(
@@ -180,11 +181,23 @@ export const loadAgentSkillStatus = async (
     resolvedAgentId
   );
   if (!recoveredWorkspace) {
-    return report;
+    if (
+      typeof report.workspaceDir === "string" &&
+      typeof report.managedSkillsDir === "string"
+    ) {
+      return report;
+    }
+    return {
+      ...report,
+      workspaceDir,
+      managedSkillsDir,
+    };
   }
   return {
     ...report,
     workspaceDir: recoveredWorkspace,
+    managedSkillsDir:
+      managedSkillsDir || `${recoveredWorkspace.replace(/[\\/]+$/, "")}/skills`,
   };
 };
 

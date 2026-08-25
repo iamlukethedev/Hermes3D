@@ -20,6 +20,9 @@ export function TaskBoardPanel({
   onSelectCard,
   onUpdateCard,
   onDeleteCard,
+  onLoadTaskDetail,
+  onAddTaskComment,
+  onReplyAndResumeTask,
   onRefreshCronJobs,
 }: {
   agents: AgentState[];
@@ -35,6 +38,11 @@ export function TaskBoardPanel({
   onSelectCard: (cardId: string | null) => void;
   onUpdateCard: (cardId: string, patch: Partial<TaskBoardCard>) => void;
   onDeleteCard: (cardId: string) => void;
+  onLoadTaskDetail?: ComponentProps<typeof TaskBoardView>["onLoadTaskDetail"];
+  onAddTaskComment?: ComponentProps<typeof TaskBoardView>["onAddTaskComment"];
+  onReplyAndResumeTask?: ComponentProps<
+    typeof TaskBoardView
+  >["onReplyAndResumeTask"];
   onRefreshCronJobs: () => void;
 }) {
   return (
@@ -54,6 +62,9 @@ export function TaskBoardPanel({
       onSelectCard={onSelectCard}
       onUpdateCard={onUpdateCard}
       onDeleteCard={onDeleteCard}
+      onLoadTaskDetail={onLoadTaskDetail}
+      onAddTaskComment={onAddTaskComment}
+      onReplyAndResumeTask={onReplyAndResumeTask}
       onRefreshCronJobs={onRefreshCronJobs}
     />
   );
