@@ -4,6 +4,7 @@ import { useGLTF } from "@react-three/drei";
 import { useFrame } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
+import { fleetSessionHeaders } from "@/lib/fleet/requestAuth";
 
 /**
  * Custom GLB bodies for agents.
@@ -25,7 +26,10 @@ export type ManagedAgentModelSpec = {
 let managedAvatarMapPromise: Promise<Map<string, ManagedAgentModelSpec>> | null = null;
 
 const loadManagedAvatarMap = () => {
-  managedAvatarMapPromise ??= fetch("/api/fleet", { cache: "no-store" })
+  managedAvatarMapPromise ??= fetch("/api/fleet", {
+    cache: "no-store",
+    headers: fleetSessionHeaders,
+  })
     .then(async (response) => {
       if (!response.ok) return new Map<string, ManagedAgentModelSpec>();
       const payload = (await response.json()) as {
