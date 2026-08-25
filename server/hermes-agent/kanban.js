@@ -238,6 +238,20 @@ const toManagedFleetIntakeBody = (body) => {
   return intake;
 };
 
+/**
+ * Managed Hermes3D may edit intake wording, but lifecycle and routing belong
+ * to the trusted fleet supervisor. In particular, standup UI state such as
+ * `working` must never promote a native `triage` card to `ready`.
+ */
+const toManagedFleetPatchBody = (body) => {
+  if (!body || typeof body !== "object") return {};
+  const patch = {};
+  const title = asTrimmed(body.title);
+  if (title) patch.title = title;
+  if (typeof body.body === "string") patch.body = body.body;
+  return patch;
+};
+
 /** ws(s):// gateway URL -> the http(s) origin serving the kanban plugin API. */
 const kanbanOriginFromWsUrl = (wsUrl) => {
   const parsed = new URL(String(wsUrl));
@@ -324,6 +338,7 @@ module.exports = {
   toHermes3dKanbanTasks,
   toKanbanCreateBody,
   toManagedFleetIntakeBody,
+  toManagedFleetPatchBody,
   toKanbanPatchBody,
   kanbanOriginFromWsUrl,
   kanbanRequest,

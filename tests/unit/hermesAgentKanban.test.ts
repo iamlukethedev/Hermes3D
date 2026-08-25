@@ -13,6 +13,7 @@ const {
   toHermes3dKanbanTasks,
   toKanbanCreateBody,
   toManagedFleetIntakeBody,
+  toManagedFleetPatchBody,
   toKanbanPatchBody,
   kanbanOriginFromWsUrl,
 } = await import("../../server/hermes-agent/kanban");
@@ -223,6 +224,27 @@ describe("toKanbanCreateBody", () => {
       triage: true,
       workspace_kind: "scratch",
     });
+  });
+});
+
+describe("toManagedFleetPatchBody", () => {
+  it("keeps wording edits but strips lifecycle and routing mutations", () => {
+    const mapped = toKanbanPatchBody({
+      title: "  Clarified intake  ",
+      description: "Bounded acceptance criteria",
+      assignedAgentId: "crush-engineer",
+      status: "working",
+      archived: true,
+    });
+
+    expect(toManagedFleetPatchBody(mapped)).toEqual({
+      title: "Clarified intake",
+      body: "Bounded acceptance criteria",
+    });
+  });
+
+  it("turns a managed status-only update into an inert patch", () => {
+    expect(toManagedFleetPatchBody(toKanbanPatchBody({ status: "working" }))).toEqual({});
   });
 });
 

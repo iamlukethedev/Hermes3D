@@ -129,6 +129,7 @@ const {
   toHermes3dKanbanTasks,
   toKanbanCreateBody,
   toManagedFleetIntakeBody,
+  toManagedFleetPatchBody,
   toKanbanPatchBody,
   kanbanRequest,
 } = require("./kanban");
@@ -1465,13 +1466,20 @@ function createHermesAgentUpstream(options) {
         }
         const taskId = rawId.slice(KANBAN_TASK_ID_PREFIX.length);
         try {
+          const mappedPatchBody = toKanbanPatchBody(p);
+          const updateBody = managedFleetMode
+            ? toManagedFleetPatchBody(mappedPatchBody)
+            : mappedPatchBody;
           const result = await kanbanRequest({
             wsUrl: url,
             token,
             useLoopbackHost: client.usedLoopbackHost,
-            method: "PATCH",
+            method:
+              managedFleetMode && Object.keys(updateBody).length === 0
+                ? "GET"
+                : "PATCH",
             path: `/tasks/${encodeURIComponent(taskId)}`,
-            body: toKanbanPatchBody(p),
+            ...(Object.keys(updateBody).length > 0 ? { body: updateBody } : {}),
           });
           const record = toHermes3dKanbanTaskRecord(result?.task);
           if (!record) {
