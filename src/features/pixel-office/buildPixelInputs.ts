@@ -30,10 +30,19 @@ export const buildPixelAgentInputs = (params: {
                 : animationState.jukeboxHoldByAgentId[id]
                   ? "jukebox"
                   : null;
+    // Mirror the 3D scene's desk latch: stay in "working" through desk
+    // directives and for a short stretch after the last run activity, so
+    // agents visibly reach their desk and sit even for quick runs.
+    const workingLatched =
+      agent.status === "working" ||
+      Boolean(animationState?.deskHoldByAgentId[id]) ||
+      (animationState?.workingUntilByAgentId[id] ?? 0) > nowMs;
+    const status =
+      agent.status === "error" ? "error" : workingLatched ? "working" : agent.status;
     return {
       id,
       name: agent.name,
-      status: agent.status,
+      status,
       color: agent.color,
       streaming: Boolean(animationState?.streamingByAgentId[id]),
       thinking: Boolean(animationState?.thinkingByAgentId[id]),

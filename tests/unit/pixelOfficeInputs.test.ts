@@ -108,6 +108,27 @@ describe("buildPixelAgentInputs", () => {
     expect(after.dancing).toBe(false);
   });
 
+  it("latches working status through the desk hold and working-until window", () => {
+    const state = emptyAnimationState();
+    state.workingUntilByAgentId = { a: 5_000 };
+    state.deskHoldByAgentId = { b: true };
+    const inputs = buildPixelAgentInputs({
+      agents: [agent("a"), agent("b"), agent("c", "error")],
+      animationState: state,
+      nowMs: 4_000,
+    });
+    expect(inputs[0].status).toBe("working");
+    expect(inputs[1].status).toBe("working");
+    // Error status always wins over the latch.
+    expect(inputs[2].status).toBe("error");
+    const expired = buildPixelAgentInputs({
+      agents: [agent("a")],
+      animationState: state,
+      nowMs: 6_000,
+    });
+    expect(expired[0].status).toBe("idle");
+  });
+
   it("maps streaming, thinking, approval, and standup flags", () => {
     const state = emptyAnimationState();
     state.streamingByAgentId = { a: true };
