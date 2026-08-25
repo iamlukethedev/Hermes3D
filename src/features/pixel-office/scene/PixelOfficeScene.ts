@@ -48,8 +48,11 @@ const SEATED_STATION_KINDS: ReadonlySet<PixelStationKind> = new Set([
 const WALK_FRAME_MS = 140;
 const DANCE_FRAME_MS = 260;
 
-const MIN_ZOOM = 1;
+const MIN_ZOOM = 0.75;
 const MAX_ZOOM = 4;
+
+/** World-space radius around an agent's body that accepts clicks. */
+const AGENT_CLICK_RADIUS = 14;
 
 type AgentVisual = {
   container: Phaser.GameObjects.Container;
@@ -64,10 +67,15 @@ type AgentVisual = {
   thinkText: Phaser.GameObjects.Text;
   badgeText: Phaser.GameObjects.Text;
   lastBubble: string;
+  lingerText: string;
+  bubbleChangedAt: number;
   lastStatus: string;
   lastName: string;
   seed: string;
 };
+
+/** How long a finished speech bubble stays readable, in ms. */
+const BUBBLE_LINGER_MS = 3_000;
 
 export const createPixelOfficeScene = (params: {
   PhaserLib: typeof import("phaser");
@@ -195,7 +203,7 @@ export const createPixelOfficeScene = (params: {
       for (const zoneEntry of map.zones) {
         if (!zoneEntry.label) continue;
         const centerX = (zoneEntry.tx + zoneEntry.tw / 2) * TILE;
-        const topY = zoneEntry.ty * TILE + 12;
+        const topY = zoneEntry.ty * TILE + 22;
         const text = this.add.text(0, 0, zoneEntry.label, {
           fontFamily: "system-ui, sans-serif",
           fontSize: "8px",
@@ -228,17 +236,19 @@ export const createPixelOfficeScene = (params: {
       const camera = this.cameras.main;
       camera.setBounds(-TILE * 2, -TILE * 2, worldWidth + TILE * 4, worldHeight + TILE * 4);
       camera.setRoundPixels(true);
-      const coverZoom = Math.max(
-        this.scale.width / worldWidth,
-        this.scale.height / worldHeight,
+      // Start with the whole office in view (Gather-style overview) and let
+      // the user zoom in from there.
+      const containZoom = Math.min(
+        this.scale.width / (worldWidth + TILE * 2),
+        this.scale.height / (worldHeight + TILE * 2),
       );
       const zoom = PhaserLib.Math.Clamp(
-        Math.round(coverZoom * 1.15 * 4) / 4,
+        Math.floor(containZoom * 4) / 4,
         MIN_ZOOM,
         MAX_ZOOM,
       );
       camera.setZoom(zoom);
-      camera.centerOn(worldWidth / 2, worldHeight / 2 - TILE * 2);
+      camera.centerOn(worldWidth / 2, worldHeight / 2);
     }
 
     private setupPointerControls() {
@@ -263,8 +273,33 @@ export const createPixelOfficeScene = (params: {
           this.dragStart.sy - dy / camera.zoom,
         );
       });
-      this.input.on("pointerup", () => {
+      this.input.on("pointerup", (pointer: Phaser.Input.Pointer) => {
+        const wasDrag = this.dragDistance > 6;
         this.dragStart = null;
+        if (wasDrag) return;
+        const world = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
+        const agentId = this.pickAgentAt(world.x, world.y);
+        if (!agentId) return;
+        if (pointer.rightButtonReleased()) {
+          const nativeEvent = pointer.event as MouseEvent;
+          bridge.callbacks.onAgentContextMenu?.(
+            agentId,
+            nativeEvent.clientX ?? 0,
+            nativeEvent.clientY ?? 0,
+          );
+          return;
+        }
+        if (agentId === JANITOR_ID) return;
+        const visual = this.visuals.get(agentId);
+        if (visual) {
+          this.cameras.main.pan(
+            visual.container.x,
+            visual.container.y,
+            350,
+            "Sine.easeInOut",
+          );
+        }
+        bridge.callbacks.onAgentClick?.(agentId);
       });
       this.input.on(
         "wheel",
@@ -285,6 +320,23 @@ export const createPixelOfficeScene = (params: {
     // -------------------------------------------------------------------
     // Agents.
     // -------------------------------------------------------------------
+
+    /** Returns the id of the agent whose body is nearest to a world point. */
+    private pickAgentAt(worldX: number, worldY: number): string | null {
+      let bestId: string | null = null;
+      let bestDistance = AGENT_CLICK_RADIUS;
+      for (const [id, visual] of this.visuals) {
+        // The clickable center sits mid-body, above the feet anchor.
+        const bodyX = visual.container.x;
+        const bodyY = visual.container.y - CHARACTER_HEIGHT / 2;
+        const distance = Math.hypot(worldX - bodyX, worldY - bodyY);
+        if (distance < bestDistance) {
+          bestDistance = distance;
+          bestId = id;
+        }
+      }
+      return bestId;
+    }
 
     private syncAgents(poses: PixelAgentPose[]) {
       const state = bridge.getState();
@@ -316,22 +368,9 @@ export const createPixelOfficeScene = (params: {
       const shadow = this.add.ellipse(0, -1, 12, 5, 0x000000, 0.22);
       const sprite = this.add.image(0, 0, `char_${id}_idle_down`);
       sprite.setOrigin(0.5, 1);
+      // Clicks are resolved scene-wide via pickAgentAt (more forgiving for
+      // small moving targets); the sprite is interactive for hover feedback.
       sprite.setInteractive({ useHandCursor: true });
-      sprite.on("pointerup", (pointer: Phaser.Input.Pointer) => {
-        if (this.dragDistance > 6) return;
-        if (pointer.rightButtonReleased()) {
-          const nativeEvent = pointer.event as MouseEvent;
-          bridge.callbacks.onAgentContextMenu?.(
-            id,
-            nativeEvent.clientX ?? 0,
-            nativeEvent.clientY ?? 0,
-          );
-          return;
-        }
-        if (id === JANITOR_ID) return;
-        this.cameras.main.pan(sprite.parentContainer.x, sprite.parentContainer.y, 350, "Sine.easeInOut");
-        bridge.callbacks.onAgentClick?.(id);
-      });
       sprite.on("pointerover", () => sprite.setTint(0xd9f1ff));
       sprite.on("pointerout", () => sprite.clearTint());
       const container = this.add.container(0, 0, [shadow, sprite]);
@@ -399,6 +438,8 @@ export const createPixelOfficeScene = (params: {
         thinkText,
         badgeText,
         lastBubble: "",
+        lingerText: "",
+        bubbleChangedAt: -BUBBLE_LINGER_MS,
         lastStatus: "",
         lastName: name,
         seed: id,
@@ -466,13 +507,21 @@ export const createPixelOfficeScene = (params: {
         visual.statusDot.setAlpha(1);
       }
 
-      // Speech bubble (streaming text tail).
+      // Speech bubble (streaming text tail) with a short linger after the
+      // stream finishes so quick replies stay readable.
       const bubbleTail = bubble.trim().length > 0 ? tailOf(bubble, 90) : "";
       if (bubbleTail !== visual.lastBubble) {
         visual.lastBubble = bubbleTail;
-        visual.bubbleText.setText(bubbleTail);
+        if (bubbleTail.length > 0) {
+          visual.lingerText = bubbleTail;
+          visual.bubbleChangedAt = this.animClock;
+          visual.bubbleText.setText(bubbleTail);
+        }
       }
-      const showBubble = bubbleTail.length > 0;
+      const lingering =
+        visual.lingerText.length > 0 &&
+        this.animClock - visual.bubbleChangedAt < BUBBLE_LINGER_MS;
+      const showBubble = bubbleTail.length > 0 || lingering;
       visual.bubbleBg.setVisible(showBubble);
       visual.bubbleText.setVisible(showBubble);
       if (showBubble) {

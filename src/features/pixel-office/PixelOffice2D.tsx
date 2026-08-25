@@ -119,7 +119,9 @@ export function PixelOffice2D(props: PixelOffice2DProps) {
     const inputs = buildPixelAgentInputs({ agents, animationState, nowMs });
     const bubbleTextByAgentId: Record<string, string> = {};
     for (const input of inputs) {
-      if (!input.streaming) continue;
+      // Streamed text shows while the stream flag is up or the run is still
+      // active, so short demo replies stay readable.
+      if (!input.streaming && input.status !== "working") continue;
       const text = streamingTextByAgentId[input.id] ?? "";
       if (text.trim().length > 0) {
         bubbleTextByAgentId[input.id] = text;
@@ -210,6 +212,17 @@ export function PixelOffice2D(props: PixelOffice2DProps) {
         <div className="rounded-md border border-black/25 bg-[#11131c]/70 px-2 py-1.5 text-[10px] font-mono text-white/70 backdrop-blur-sm">
           2D PIXEL
         </div>
+        <div className="flex items-center gap-2 rounded-md border border-black/25 bg-[#11131c]/70 px-2 py-1.5 text-[10px] font-mono backdrop-blur-sm">
+          <span className="text-emerald-300/85">{workingCount} working</span>
+          <span className="text-white/25">·</span>
+          <span className="text-amber-300/85">{idleCount} idle</span>
+          {errorCount > 0 ? (
+            <>
+              <span className="text-white/25">·</span>
+              <span className="text-rose-300/85">{errorCount} error</span>
+            </>
+          ) : null}
+        </div>
       </div>
 
       {/* Toolbar — top right. */}
@@ -257,23 +270,8 @@ export function PixelOffice2D(props: PixelOffice2DProps) {
         </button>
       </div>
 
-      {/* Status bar — bottom left. */}
-      <div className="absolute bottom-3 left-3 z-10 pointer-events-none select-none">
-        <div className="flex items-center gap-3 rounded-full bg-black/60 px-3 py-1 text-[10px] font-mono backdrop-blur-sm">
-          <span className="text-emerald-300/80">{workingCount} working</span>
-          <span className="opacity-30">·</span>
-          <span className="text-amber-300/80">{idleCount} idle</span>
-          {errorCount > 0 ? (
-            <>
-              <span className="opacity-30">·</span>
-              <span className="text-rose-300/80">{errorCount} error</span>
-            </>
-          ) : null}
-        </div>
-      </div>
-
-      {/* Controls hint — bottom right. */}
-      <div className="absolute bottom-3 right-3 z-10 pointer-events-none select-none">
+      {/* Controls hint — bottom center (event console and chat own the corners). */}
+      <div className="absolute bottom-3 left-1/2 z-10 -translate-x-1/2 pointer-events-none select-none">
         <div className="rounded-full bg-black/50 px-3 py-1 text-[10px] font-mono text-white/55 backdrop-blur-sm">
           drag to pan · scroll to zoom · click an agent to chat
         </div>
