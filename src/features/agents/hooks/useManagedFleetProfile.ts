@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { fleetSessionHeaders } from "@/lib/fleet/requestAuth";
 
 export type ManagedFleetProfile = {
   id: string;
@@ -52,7 +53,10 @@ export const useManagedFleetProfile = (agentId: string | null | undefined) => {
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const response = await fetch("/api/fleet", { cache: "no-store" });
+      const response = await fetch("/api/fleet", {
+        cache: "no-store",
+        headers: fleetSessionHeaders,
+      });
       const payload = (await response.json()) as FleetResponse & { error?: string };
       if (!response.ok) throw new Error(payload.error || "Failed to load managed fleet status.");
       setFleet(payload);
@@ -86,7 +90,7 @@ export const useManagedFleetProfile = (agentId: string | null | undefined) => {
       try {
         const response = await fetch("/api/fleet", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...fleetSessionHeaders },
           body: JSON.stringify({ action, validatedHash, previewedHash }),
         });
         const payload = (await response.json()) as {

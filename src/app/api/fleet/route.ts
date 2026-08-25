@@ -6,19 +6,30 @@ import {
   runFleetCommand,
   type FleetCommand,
 } from "@/lib/fleet/managedProfiles";
+import { authorizeFleetRequest } from "@/lib/fleet/requestAuth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const MUTATING_ACTIONS = new Set<FleetCommand>(["apply", "rollback"]);
 
-export async function GET() {
+const rejectUnauthorized = (request: Request) => {
+  const authorization = authorizeFleetRequest(request);
+  if (authorization.ok) return null;
+  return NextResponse.json({ error: authorization.error }, { status: authorization.status });
+};
+
+export async function GET(request: Request) {
+  const rejected = rejectUnauthorized(request);
+  if (rejected) return rejected;
   const fleet = await readManagedFleetSnapshot();
   if (!fleet) return NextResponse.json({ configured: false });
   return NextResponse.json({ ...fleet, backups: listFleetBackups() });
 }
 
 export async function POST(request: Request) {
+  const rejected = rejectUnauthorized(request);
+  if (rejected) return rejected;
   const body = (await request.json().catch(() => null)) as {
     action?: FleetCommand;
     validatedHash?: string;

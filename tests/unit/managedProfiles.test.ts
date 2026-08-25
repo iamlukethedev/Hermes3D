@@ -8,11 +8,13 @@ import {
   resolveFleetAvatarAsset,
   resolveFleetRoot,
 } from "@/lib/fleet/managedProfiles";
+import { authorizeFleetRequest, fleetSessionHeaders } from "@/lib/fleet/requestAuth";
 
 const savedEnvironment = {
   HERMES3D_FLEET_ROOT: process.env.HERMES3D_FLEET_ROOT,
   HERMES3D_FLEET_MUTATIONS: process.env.HERMES3D_FLEET_MUTATIONS,
   HERMES_HOME: process.env.HERMES_HOME,
+  HERMES_DASHBOARD_SESSION_TOKEN: process.env.HERMES_DASHBOARD_SESSION_TOKEN,
 };
 
 afterEach(() => {
@@ -23,6 +25,25 @@ afterEach(() => {
 });
 
 describe("managed fleet status", () => {
+  it("requires the configured same-origin fleet session guard", () => {
+    process.env.HERMES_DASHBOARD_SESSION_TOKEN = "test-session-token";
+    const allowed = new Request("http://127.0.0.1:3000/api/fleet", {
+      headers: { ...fleetSessionHeaders, "sec-fetch-site": "same-origin" },
+    });
+    const crossOrigin = new Request("http://127.0.0.1:3000/api/fleet", {
+      headers: {
+        ...fleetSessionHeaders,
+        origin: "https://attacker.example",
+        "sec-fetch-site": "cross-site",
+      },
+    });
+    const missingHeader = new Request("http://127.0.0.1:3000/api/fleet");
+
+    expect(authorizeFleetRequest(allowed)).toEqual({ ok: true });
+    expect(authorizeFleetRequest(crossOrigin)).toMatchObject({ ok: false, status: 403 });
+    expect(authorizeFleetRequest(missingHeader)).toMatchObject({ ok: false, status: 401 });
+  });
+
   it("returns canonical policy and marks a missing live projection as not deployed", async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "hermes3d-managed-source-"));
     const hermesHome = fs.mkdtempSync(path.join(os.tmpdir(), "hermes3d-managed-live-"));
