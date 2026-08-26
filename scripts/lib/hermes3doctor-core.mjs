@@ -213,6 +213,24 @@ export const resolveRuntimeContext = ({
   };
 };
 
+export const buildGatewayProbeUrl = ({
+  adapterType,
+  url,
+  token = "",
+}) => {
+  const rawUrl = trimString(url);
+  if (normalizeAdapterType(adapterType, "") !== "hermes-agent" || !rawUrl) {
+    return rawUrl;
+  }
+
+  const parsed = new URL(rawUrl);
+  if (parsed.protocol === "http:") parsed.protocol = "ws:";
+  else if (parsed.protocol === "https:") parsed.protocol = "wss:";
+  parsed.pathname = "/api/ws";
+  if (trimString(token)) parsed.searchParams.set("token", trimString(token));
+  return parsed.toString();
+};
+
 export const buildGatewayWarnings = ({
   gatewayUrl,
   studioAccessToken = "",
@@ -618,6 +636,25 @@ export const formatDoctorReport = ({
   return lines.join("\n");
 };
 
+export const sanitizeDoctorRuntimeContext = (runtimeContext = {}) => ({
+  adapterType: trimString(runtimeContext.adapterType) || "unknown",
+  gatewayUrl: trimString(runtimeContext.gatewayUrl),
+  tokenConfigured: Boolean(
+    runtimeContext.tokenConfigured || trimString(runtimeContext.token),
+  ),
+  profiles: Object.fromEntries(
+    Object.entries(runtimeContext.profiles ?? {}).map(([adapterType, profile]) => [
+      adapterType,
+      {
+        url: trimString(profile?.url),
+        tokenConfigured: Boolean(
+          profile?.tokenConfigured || trimString(profile?.token),
+        ),
+      },
+    ]),
+  ),
+});
+
 export const buildDoctorJsonReport = ({
   summary,
   runtimeContext,
@@ -626,7 +663,7 @@ export const buildDoctorJsonReport = ({
 }) => ({
   doctor: "hermes3doctor",
   summary,
-  runtimeContext,
+  runtimeContext: sanitizeDoctorRuntimeContext(runtimeContext),
   paths,
   checks,
   counts: {

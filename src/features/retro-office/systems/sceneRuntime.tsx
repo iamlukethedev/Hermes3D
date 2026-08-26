@@ -182,8 +182,42 @@ export function PingPongBall({
   );
 }
 
+export const GAME_LOOP_FPS = 60;
+export const MAX_GAME_LOOP_CATCH_UP_STEPS = 8;
+
+export const consumeGameLoopSteps = (
+  accumulator: number,
+  deltaSeconds: number,
+): { steps: number; remainder: number } => {
+  const safeAccumulator = Number.isFinite(accumulator)
+    ? Math.max(0, accumulator)
+    : 0;
+  const safeDelta = Number.isFinite(deltaSeconds)
+    ? Math.max(0, deltaSeconds)
+    : 0;
+  const accumulated = Math.min(
+    MAX_GAME_LOOP_CATCH_UP_STEPS,
+    safeAccumulator + safeDelta * GAME_LOOP_FPS,
+  );
+  const steps = Math.floor(accumulated);
+  return { steps, remainder: accumulated - steps };
+};
+
 export function GameLoop({ tick }: { tick: () => void }) {
-  useFrame(() => tick());
+  const accumulatorRef = useRef(0);
+
+  useFrame((_, delta) => {
+    // The scene simulation uses nominal 60 FPS steps. Catch up when the
+    // renderer produces fewer frames so movement and avatar animation do not
+    // become slower while pointer events remain responsive. Cap catch-up to
+    // avoid a spiral after a long tab/background stall.
+    const { steps, remainder } = consumeGameLoopSteps(
+      accumulatorRef.current,
+      delta,
+    );
+    accumulatorRef.current = remainder;
+    for (let step = 0; step < steps; step += 1) tick();
+  });
   return null;
 }
 

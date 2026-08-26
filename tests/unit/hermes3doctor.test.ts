@@ -4,6 +4,7 @@ import {
   buildCustomRuntimeWarnings,
   buildDoctorJsonReport,
   buildGatewayFailureActions,
+  buildGatewayProbeUrl,
   buildGatewayWarnings,
   buildRemoteGatewayWarnings,
   buildProfileWarnings,
@@ -20,6 +21,43 @@ import {
 } from "../../scripts/lib/hermes3doctor-core.mjs";
 
 describe("hermes3doctor core", () => {
+  it("builds authenticated hermes-agent probe URLs at /api/ws", () => {
+    const probeUrl = buildGatewayProbeUrl({
+      adapterType: "hermes-agent",
+      url: "ws://localhost:9120",
+      token: "probe-token",
+    });
+
+    expect(probeUrl).toBe("ws://localhost:9120/api/ws?token=probe-token");
+  });
+
+  it("canonicalizes hermes-agent probe paths and schemes", () => {
+    expect(
+      buildGatewayProbeUrl({
+        adapterType: "hermes-agent",
+        url: "https://gateway.example/base/",
+        token: "probe-token",
+      }),
+    ).toBe("wss://gateway.example/api/ws?token=probe-token");
+    expect(
+      buildGatewayProbeUrl({
+        adapterType: "hermes-agent",
+        url: "ws://localhost:9120/api/ws/",
+        token: "",
+      }),
+    ).toBe("ws://localhost:9120/api/ws");
+  });
+
+  it("leaves generic websocket profiles unchanged when no token is configured", () => {
+    expect(
+      buildGatewayProbeUrl({
+        adapterType: "demo",
+        url: "ws://localhost:18789",
+        token: "",
+      }),
+    ).toBe("ws://localhost:18789");
+  });
+
   it("resolves selected runtime from settings profiles", () => {
     const runtime = resolveRuntimeContext({
       settings: {
@@ -272,6 +310,39 @@ describe("hermes3doctor core", () => {
     expect(isCustomRuntimeAdapter("local")).toBe(true);
     expect(isCustomRuntimeAdapter("hermes3d")).toBe(true);
     expect(isCustomRuntimeAdapter("hermes")).toBe(false);
+  });
+
+  it("redacts gateway tokens from json reports", () => {
+    const report = buildDoctorJsonReport({
+      summary: DOCTOR_STATUSES.pass,
+      runtimeContext: {
+        adapterType: "hermes-agent",
+        gatewayUrl: "ws://localhost:9120",
+        token: "sentinel-token",
+        tokenConfigured: true,
+        profiles: {
+          "hermes-agent": {
+            url: "ws://localhost:9120",
+            token: "sentinel-token",
+          },
+        },
+      },
+      paths: { stateDir: "/tmp/.hermes", settingsPath: "/tmp/settings.json" },
+      checks: [],
+    });
+
+    expect(JSON.stringify(report)).not.toContain("sentinel-token");
+    expect(report.runtimeContext).toEqual({
+      adapterType: "hermes-agent",
+      gatewayUrl: "ws://localhost:9120",
+      tokenConfigured: true,
+      profiles: {
+        "hermes-agent": {
+          url: "ws://localhost:9120",
+          tokenConfigured: true,
+        },
+      },
+    });
   });
 
   it("builds a structured json report", () => {

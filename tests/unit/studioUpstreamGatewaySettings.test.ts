@@ -8,10 +8,20 @@ const makeTempDir = (name: string) => fs.mkdtempSync(path.join(os.tmpdir(), `${n
 
 describe("server studio upstream gateway settings", () => {
   const priorStateDir = process.env.HERMES_STATE_DIR;
+  const priorGatewayUrl = process.env.HERMES3D_GATEWAY_URL;
+  const priorGatewayToken = process.env.HERMES3D_GATEWAY_TOKEN;
+  const priorGatewayAdapterType = process.env.HERMES3D_GATEWAY_ADAPTER_TYPE;
   let tempDir: string | null = null;
 
   afterEach(() => {
-    process.env.HERMES_STATE_DIR = priorStateDir;
+    if (priorStateDir === undefined) delete process.env.HERMES_STATE_DIR;
+    else process.env.HERMES_STATE_DIR = priorStateDir;
+    if (priorGatewayUrl === undefined) delete process.env.HERMES3D_GATEWAY_URL;
+    else process.env.HERMES3D_GATEWAY_URL = priorGatewayUrl;
+    if (priorGatewayToken === undefined) delete process.env.HERMES3D_GATEWAY_TOKEN;
+    else process.env.HERMES3D_GATEWAY_TOKEN = priorGatewayToken;
+    if (priorGatewayAdapterType === undefined) delete process.env.HERMES3D_GATEWAY_ADAPTER_TYPE;
+    else process.env.HERMES3D_GATEWAY_ADAPTER_TYPE = priorGatewayAdapterType;
     if (tempDir) {
       fs.rmSync(tempDir, { recursive: true, force: true });
       tempDir = null;
@@ -54,5 +64,22 @@ describe("server studio upstream gateway settings", () => {
     const settings = loadUpstreamGatewaySettings(process.env);
     expect(settings.url).toBe("ws://gateway.example:18789");
     expect(settings.token).toBe("tok-local");
+  });
+
+  it("loads gateway settings from documented environment variables", async () => {
+    tempDir = makeTempDir("studio-upstream-env");
+    process.env.HERMES_STATE_DIR = tempDir;
+    process.env.HERMES3D_GATEWAY_URL = "ws://env.example:9120";
+    process.env.HERMES3D_GATEWAY_TOKEN = "env-token";
+    process.env.HERMES3D_GATEWAY_ADAPTER_TYPE = "hermes-agent";
+
+    const { loadUpstreamGatewaySettings } = await import("../../server/studio-settings");
+    const settings = loadUpstreamGatewaySettings(process.env);
+    expect(settings).toEqual({
+      url: "ws://env.example:9120",
+      token: "env-token",
+      adapterType: "hermes-agent",
+      settingsPath: path.join(tempDir, "hermes3d", "settings.json"),
+    });
   });
 });

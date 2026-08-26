@@ -8,6 +8,7 @@ import {
   buildCustomRuntimeWarnings,
   buildDoctorJsonReport,
   buildGatewayFailureActions,
+  buildGatewayProbeUrl,
   buildGatewayWarnings,
   buildRemoteGatewayWarnings,
   buildProfileWarnings,
@@ -232,7 +233,7 @@ const probeCustomRuntimeHealth = async (runtimeUrl) => {
   };
 };
 
-const probeProfileHealth = async ({ adapterType, url }) => {
+const probeProfileHealth = async ({ adapterType, url, token }) => {
   if (isCustomRuntimeAdapter(adapterType)) {
     const result = await probeCustomRuntimeHealth(url);
     return {
@@ -241,7 +242,8 @@ const probeProfileHealth = async ({ adapterType, url }) => {
     };
   }
 
-  const result = await probeWebSocket(url);
+  const probeUrl = buildGatewayProbeUrl({ adapterType, url, token });
+  const result = await probeWebSocket(probeUrl);
   return {
     ok: result.ok,
     message: result.message,
@@ -423,7 +425,11 @@ async function main() {
     if (!url) continue;
     const isSelected = adapterType === runtimeContext.adapterType;
     const label = `${adapterType} profile${isSelected ? " (selected)" : ""}`;
-    const health = await probeProfileHealth({ adapterType, url });
+    const health = await probeProfileHealth({
+      adapterType,
+      url,
+      token: trim(profile?.token),
+    });
     checks.push(
       health.ok
         ? checkPass("Profile health", label, `${url} -> ${health.message}`)

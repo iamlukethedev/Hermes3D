@@ -70,12 +70,22 @@ const loadUpstreamGatewaySettings = (env = process.env) => {
   const settingsPath = resolveStudioSettingsPath(env);
   const parsed = readJsonFile(settingsPath);
   const gateway = parsed && typeof parsed === "object" ? parsed.gateway : null;
-  const url = typeof gateway?.url === "string" ? gateway.url.trim() : "";
-  const token = typeof gateway?.token === "string" ? gateway.token.trim() : "";
-  const adapterType =
+  const configuredUrl = typeof gateway?.url === "string" ? gateway.url.trim() : "";
+  const configuredToken = typeof gateway?.token === "string" ? gateway.token.trim() : "";
+  const configuredAdapterType =
     typeof gateway?.adapterType === "string" && gateway.adapterType.trim()
       ? gateway.adapterType.trim()
-      : "hermes";
+      : "";
+  const envUrl = typeof env.HERMES3D_GATEWAY_URL === "string" ? env.HERMES3D_GATEWAY_URL.trim() : "";
+  const envToken =
+    typeof env.HERMES3D_GATEWAY_TOKEN === "string" ? env.HERMES3D_GATEWAY_TOKEN.trim() : "";
+  const envAdapterType =
+    typeof env.HERMES3D_GATEWAY_ADAPTER_TYPE === "string"
+      ? env.HERMES3D_GATEWAY_ADAPTER_TYPE.trim()
+      : "";
+  const url = configuredUrl || envUrl;
+  const token = configuredToken || envToken;
+  const adapterType = configuredAdapterType || envAdapterType || "hermes";
   if (!token && adapterType === "hermes") {
     const defaults = readHermesGatewayDefaults(env);
     if (defaults) {
