@@ -54,8 +54,8 @@ export type CharacterLook = {
   accentColor: string;
 };
 
-export const CHARACTER_WIDTH = 16;
-export const CHARACTER_HEIGHT = 24;
+export const CHARACTER_WIDTH = 20;
+export const CHARACTER_HEIGHT = 30;
 
 /** All frames for a single character, keyed by frame name. */
 export type CharacterFrameSet = Record<CharacterFrameName, PixelSprite>;
@@ -80,6 +80,7 @@ export type PixelGroundTile =
   | "gym_mat"
   | "server_floor"
   | "wall"
+  | "wall_window"
   | "void";
 
 /** Furniture / decor object kinds the art module must provide sprites for. */

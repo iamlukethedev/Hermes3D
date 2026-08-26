@@ -170,7 +170,7 @@ export function PixelOffice2D(props: PixelOffice2DProps) {
       const game = new PhaserLib.Game({
         type: PhaserLib.AUTO,
         parent: rootRef.current,
-        backgroundColor: "#6fb544",
+        backgroundColor: "#b5dc9c",
         scene: [scene],
         render: {
           antialias: false,

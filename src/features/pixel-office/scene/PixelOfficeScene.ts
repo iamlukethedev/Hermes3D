@@ -48,7 +48,7 @@ const SEATED_STATION_KINDS: ReadonlySet<PixelStationKind> = new Set([
 const WALK_FRAME_MS = 140;
 const DANCE_FRAME_MS = 260;
 
-const MIN_ZOOM = 0.75;
+const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 4;
 
 /** World-space radius around an agent's body that accepts clicks. */
@@ -232,23 +232,43 @@ export const createPixelOfficeScene = (params: {
     // Camera + input.
     // -------------------------------------------------------------------
 
-    private setupCamera() {
-      const camera = this.cameras.main;
-      camera.setBounds(-TILE * 2, -TILE * 2, worldWidth + TILE * 4, worldHeight + TILE * 4);
-      camera.setRoundPixels(true);
-      // Start with the whole office in view (Gather-style overview) and let
-      // the user zoom in from there.
-      const containZoom = Math.min(
+    /** Zoom at which the whole map (plus a margin) fits the viewport. */
+    private containZoom(): number {
+      return Math.min(
         this.scale.width / (worldWidth + TILE * 2),
         this.scale.height / (worldHeight + TILE * 2),
       );
+    }
+
+    /** Lowest allowed zoom: never smaller than "whole map in view". */
+    private minZoom(): number {
+      return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, this.containZoom()));
+    }
+
+    private setupCamera() {
+      const camera = this.cameras.main;
+      // Bounds are at least as large as the viewport at minimum zoom and
+      // centered on the map, so a fully zoomed-out map sits centered with
+      // symmetric grass margins instead of pinned to a corner.
+      const minZoom = this.minZoom();
+      const boundsW = Math.max(worldWidth + TILE * 4, this.scale.width / minZoom);
+      const boundsH = Math.max(worldHeight + TILE * 4, this.scale.height / minZoom);
+      camera.setBounds(
+        worldWidth / 2 - boundsW / 2,
+        worldHeight / 2 - boundsH / 2,
+        boundsW,
+        boundsH,
+      );
+      camera.setRoundPixels(true);
+      // Gather-style default: start close enough that the pixel art reads at
+      // 1:1+ detail, centered on the main pods. Wheel out for the overview.
       const zoom = PhaserLib.Math.Clamp(
-        Math.floor(containZoom * 4) / 4,
-        MIN_ZOOM,
+        Math.max(1.5, Math.floor(this.containZoom() * 4) / 4),
+        this.minZoom(),
         MAX_ZOOM,
       );
       camera.setZoom(zoom);
-      camera.centerOn(worldWidth / 2, worldHeight / 2);
+      camera.centerOn(worldWidth / 2, worldHeight * 0.42);
     }
 
     private setupPointerControls() {
@@ -311,7 +331,7 @@ export const createPixelOfficeScene = (params: {
         ) => {
           const camera = this.cameras.main;
           const step = deltaY > 0 ? -0.25 : 0.25;
-          const next = PhaserLib.Math.Clamp(camera.zoom + step, MIN_ZOOM, MAX_ZOOM);
+          const next = PhaserLib.Math.Clamp(camera.zoom + step, this.minZoom(), MAX_ZOOM);
           camera.setZoom(next);
         },
       );
@@ -365,7 +385,7 @@ export const createPixelOfficeScene = (params: {
     }
 
     private createVisual(id: string, name: string): AgentVisual {
-      const shadow = this.add.ellipse(0, -1, 12, 5, 0x000000, 0.22);
+      const shadow = this.add.ellipse(0, -1, 15, 6, 0x000000, 0.2);
       const sprite = this.add.image(0, 0, `char_${id}_idle_down`);
       sprite.setOrigin(0.5, 1);
       // Clicks are resolved scene-wide via pickAgentAt (more forgiving for

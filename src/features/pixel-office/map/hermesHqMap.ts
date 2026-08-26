@@ -52,6 +52,14 @@ const vWall = (ground: Grid, x: number, y1: number, y2: number, doors: number[] 
   }
 };
 
+/** Replaces horizontal wall tiles with window panes (still blocking). */
+const windows = (ground: Grid, y: number, xs: number[]) => {
+  for (const x of xs) {
+    if (ground[y * HQ_COLS + x] !== "wall") continue;
+    fillRect(ground, "wall_window", x, y, 1, 1);
+  }
+};
+
 let objectSeq = 0;
 const obj = (
   kind: PixelObjectKind,
@@ -140,6 +148,12 @@ export const buildHermesHqMap = (): PixelOfficeMap => {
   // Server room walls.
   vWall(ground, 44, 24, 39, [30, 31]);
   hWall(ground, 24, 45, 53);
+
+  // Window panes along the north facade and key interior walls (Gather-style).
+  windows(ground, 1, [8, 9, 13, 14, 20, 21, 25, 26, 31, 32, 36, 37, 43, 44, 49, 50]);
+  windows(ground, 9, [19, 20, 26, 27, 30, 31, 36, 37]);
+  windows(ground, 12, [8, 9, 14, 15]);
+  windows(ground, 22, [7, 8, 13, 14]);
 
   // ---------------------------------------------------------------------
   // Objects.

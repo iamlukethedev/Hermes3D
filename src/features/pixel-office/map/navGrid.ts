@@ -20,7 +20,7 @@ export const buildPixelNavGrid = (map: PixelOfficeMap): NavGrid2D => {
 
   for (let index = 0; index < map.ground.length; index += 1) {
     const tile = map.ground[index];
-    if (tile === "wall" || tile === "void") {
+    if (tile === "wall" || tile === "wall_window" || tile === "void") {
       cells[index] = 1;
     }
   }

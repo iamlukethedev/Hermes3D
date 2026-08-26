@@ -3,41 +3,54 @@
 
 // ---------------------------------------------------------------------------
 // Ground tiles.
+// Soft pastel Gather-style palette: light desaturated bases with
+// low-contrast texture accents so large floor areas read calm, not busy.
 // ---------------------------------------------------------------------------
 
-export const GRASS_BASE = "#7bc850";
-export const GRASS_BLADE = "#63ad3f";
-export const GRASS_ALT_BASE = "#76c24d";
-export const GRASS_DARK_BASE = "#63ad3f";
-export const GRASS_DARK_BLADE = "#529636";
+export const GRASS_BASE = "#b5dc9c";
+export const GRASS_MOTTLE = "#c3e5ab";
+export const GRASS_BLADE = "#9ccb80";
+export const GRASS_FLOWER = "#f7f3e9";
+export const GRASS_ALT_BASE = "#b3da99";
+export const GRASS_DARK_BASE = "#a2cf88";
+export const GRASS_DARK_MOTTLE = "#aed695";
+export const GRASS_DARK_BLADE = "#90bf75";
 
-export const PATH_BASE = "#d9c79a";
-export const PATH_SPECKLE = "#c9b283";
+export const PATH_BASE = "#e3ddd0";
+export const PATH_SPECKLE = "#d7d0c0";
 
-export const FLOOR_CREAM = "#f2e6cf";
-export const FLOOR_CREAM_LINE = "#e6d6b8";
-export const FLOOR_WHITE = "#f7f5f0";
-export const FLOOR_WHITE_LINE = "#eae7df";
-export const FLOOR_WOOD = "#d8a86e";
-export const FLOOR_WOOD_SEAM = "#c39257";
+export const FLOOR_CREAM = "#f4efe4";
+export const FLOOR_CREAM_CHECK = "#f2ece0";
+export const FLOOR_CREAM_LINE = "#ebe4d5";
+export const FLOOR_WHITE = "#f8f7f3";
+export const FLOOR_WHITE_LINE = "#f5f3ee";
+export const FLOOR_WOOD = "#ecd9c3";
+export const FLOOR_WOOD_SEAM = "#dfc9ae";
+export const FLOOR_WOOD_GRAIN = "#e5d1b8";
 
-export const CARPET_PURPLE = "#a9a3d6";
-export const CARPET_PURPLE_DOT = "#9a93cb";
-export const CARPET_BLUE = "#8fb7d9";
-export const CARPET_BLUE_DOT = "#7fa6c9";
+export const CARPET_PURPLE = "#b7b1e2";
+export const CARPET_PURPLE_DOT = "#aca5da";
+export const CARPET_BLUE = "#a9c8e6";
+export const CARPET_BLUE_DOT = "#9dbcdc";
 
-export const KITCHEN_TILE_LIGHT = "#e8e2d4";
-export const KITCHEN_TILE_DARK = "#dcd4c2";
+export const KITCHEN_TILE_LIGHT = "#e4e6dd";
+export const KITCHEN_TILE_DARK = "#d8dbd0";
 
-export const GYM_MAT = "#b8c9d9";
-export const GYM_MAT_LINE = "#a5b8ca";
+export const GYM_MAT = "#c4d2e0";
+export const GYM_MAT_LINE = "#b3c3d4";
 
-export const SERVER_FLOOR = "#4a5568";
-export const SERVER_FLOOR_GRID = "#3d4759";
+export const SERVER_FLOOR = "#5b6478";
+export const SERVER_FLOOR_GRID = "#4e576a";
 
-export const WALL_TOP = "#3d4258";
-export const WALL_FACE = "#565d7a";
-export const WALL_EDGE = "#6b7394";
+export const WALL_TOP = "#6e7687";
+export const WALL_FACE = "#8b93a4";
+export const WALL_EDGE = "#9aa2b2";
+export const WALL_SEAM = "#7e8697";
+export const WALL_BASEBOARD = "#626a7a";
+
+export const WINDOW_GLASS = "#bfe2f4";
+export const WINDOW_SHEEN = "#e8f6fd";
+export const WINDOW_FRAME = "#f2f4f6";
 
 // ---------------------------------------------------------------------------
 // Furniture.

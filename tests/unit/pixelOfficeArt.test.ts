@@ -31,6 +31,7 @@ const GROUND_TILES: Exclude<PixelGroundTile, "void">[] = [
   "gym_mat",
   "server_floor",
   "wall",
+  "wall_window",
 ];
 
 const FRAME_NAMES: CharacterFrameName[] = [
@@ -112,7 +113,7 @@ describe("pixel office art", () => {
     expect(sprites).toHaveLength(kinds.length);
   });
 
-  it("builds all character frames at exactly 16x24 with covered palettes", () => {
+  it("builds all character frames at exactly 20x30 with covered palettes", () => {
     const frames = buildCharacterFrames({ seed: "agent-alpha", accentColor: "#e06c50" });
     for (const name of FRAME_NAMES) {
       const sprite = frames[name];
