@@ -4422,6 +4422,10 @@ export function OfficeScreen({
     status === "disconnected" &&
     !agentsLoaded &&
     (shouldPromptForConnect || showDelayedGatewayConnectOverlay);
+  // Defer mounting the heavy office renderers (Three.js / Phaser) until a
+  // gateway connection exists, so users can pick 2D vs. 3D on the connect
+  // screen before either pipeline loads.
+  const officeSceneReady = agentsLoaded || status === "connected";
 
   const runningCount = state.agents.filter(
     (agent) =>
@@ -4461,9 +4465,11 @@ export function OfficeScreen({
         </div>
       ) : null}
       {showGatewayConnectOverlay ? (
-        <div className="pointer-events-auto absolute inset-0 z-50 flex items-start justify-center bg-[#120a05]/76 px-4 py-10">
-          <div className="w-full max-w-[860px] rounded-2xl border border-amber-900/55 bg-[#120a05]/98 p-3 shadow-2xl">
+        <div className="pointer-events-auto absolute inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[#120a05]/76 px-4 py-10">
+          <div className="mb-10 w-full max-w-[860px] rounded-2xl border border-amber-900/55 bg-[#120a05]/98 p-3 shadow-2xl">
             <GatewayConnectScreen
+              renderMode={officeRenderMode}
+              onRenderModeChange={handleOfficeRenderModeChange}
               gatewayUrl={gatewayUrl}
               token={token}
               selectedAdapterType={selectedAdapterType}
@@ -4481,7 +4487,16 @@ export function OfficeScreen({
         </div>
       ) : null}
       <section className="relative h-full min-h-0 min-w-0 overflow-hidden">
-        {officeRenderMode === "2d" ? (
+        {!officeSceneReady ? (
+        <div
+          className="flex h-full w-full items-center justify-center bg-[radial-gradient(ellipse_at_center,#1c1208_0%,#0d0804_70%)]"
+          aria-hidden
+        >
+          <p className="select-none font-mono text-xs tracking-[0.4em] text-amber-100/25">
+            HERMES3D
+          </p>
+        </div>
+        ) : officeRenderMode === "2d" ? (
         <PixelOffice2D
           agents={allVisibleAgents}
           animationState={officeAnimationState}
