@@ -30,9 +30,9 @@ export type PixelSimulation = {
 
 export const JANITOR_ID = "npc-janitor";
 
-// Walking speeds in world pixels per second.
-const AGENT_SPEED = 90;
-const JANITOR_SPEED = 70;
+// Walking speeds in world pixels per second (~5.6 and ~4.4 tiles/s).
+const AGENT_SPEED = 180;
+const JANITOR_SPEED = 140;
 // Movement dt is capped so a sleeping tab does not teleport agents on resume.
 const MAX_STEP_MS = 100;
 // Idle wanderers pause 4-10 seconds at a station before picking a new one.

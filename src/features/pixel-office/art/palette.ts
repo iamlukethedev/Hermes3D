@@ -9,22 +9,31 @@
 
 export const GRASS_BASE = "#b5dc9c";
 export const GRASS_MOTTLE = "#c3e5ab";
+export const GRASS_MOTTLE_DEEP = "#aad48f";
 export const GRASS_BLADE = "#9ccb80";
 export const GRASS_FLOWER = "#f7f3e9";
+export const GRASS_FLOWER_PINK = "#f3cdd8";
+export const GRASS_FLOWER_CENTER = "#f0d98c";
 export const GRASS_ALT_BASE = "#b3da99";
 export const GRASS_DARK_BASE = "#a2cf88";
 export const GRASS_DARK_MOTTLE = "#aed695";
+export const GRASS_DARK_MOTTLE_DEEP = "#97c67c";
 export const GRASS_DARK_BLADE = "#90bf75";
 
 export const PATH_BASE = "#e3ddd0";
 export const PATH_SPECKLE = "#d7d0c0";
+export const PATH_PEBBLE_LIGHT = "#ece7db";
 
 export const FLOOR_CREAM = "#f4efe4";
-export const FLOOR_CREAM_CHECK = "#f2ece0";
+export const FLOOR_CREAM_CHECK = "#f3ede1";
 export const FLOOR_CREAM_LINE = "#ebe4d5";
 export const FLOOR_WHITE = "#f8f7f3";
-export const FLOOR_WHITE_LINE = "#f5f3ee";
+export const FLOOR_WHITE_LINE = "#f6f5f0";
+export const FLOOR_WHITE_SPECK = "#efede6";
+
 export const FLOOR_WOOD = "#ecd9c3";
+export const FLOOR_WOOD_TONE = "#e9d4bc";
+export const FLOOR_WOOD_LIGHT = "#f0dfcb";
 export const FLOOR_WOOD_SEAM = "#dfc9ae";
 export const FLOOR_WOOD_GRAIN = "#e5d1b8";
 
@@ -35,22 +44,32 @@ export const CARPET_BLUE_DOT = "#9dbcdc";
 
 export const KITCHEN_TILE_LIGHT = "#e4e6dd";
 export const KITCHEN_TILE_DARK = "#d8dbd0";
+export const KITCHEN_TILE_LIGHT_BEVEL = "#eef0e8";
+export const KITCHEN_TILE_DARK_BEVEL = "#e2e5da";
 
 export const GYM_MAT = "#c4d2e0";
 export const GYM_MAT_LINE = "#b3c3d4";
+export const GYM_MAT_SEAM = "#bccbd9";
 
 export const SERVER_FLOOR = "#5b6478";
 export const SERVER_FLOOR_GRID = "#4e576a";
+export const SERVER_FLOOR_LIGHT = "#677085";
+export const SERVER_FLOOR_VENT = "#454e60";
 
 export const WALL_TOP = "#6e7687";
+export const WALL_TOP_SHEEN = "#767e8e";
 export const WALL_FACE = "#8b93a4";
 export const WALL_EDGE = "#9aa2b2";
 export const WALL_SEAM = "#7e8697";
+export const WALL_SEAM_HIGHLIGHT = "#959dad";
 export const WALL_BASEBOARD = "#626a7a";
+export const WALL_FLOOR_SHADOW = "#565e6e";
 
 export const WINDOW_GLASS = "#bfe2f4";
+export const WINDOW_SKY_TOP = "#cfeaf8";
 export const WINDOW_SHEEN = "#e8f6fd";
 export const WINDOW_FRAME = "#f2f4f6";
+export const WINDOW_SILL_SHADOW = "#d9dde2";
 
 // ---------------------------------------------------------------------------
 // Furniture.

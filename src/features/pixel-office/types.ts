@@ -54,8 +54,8 @@ export type CharacterLook = {
   accentColor: string;
 };
 
-export const CHARACTER_WIDTH = 20;
-export const CHARACTER_HEIGHT = 30;
+export const CHARACTER_WIDTH = 40;
+export const CHARACTER_HEIGHT = 60;
 
 /** All frames for a single character, keyed by frame name. */
 export type CharacterFrameSet = Record<CharacterFrameName, PixelSprite>;
@@ -64,7 +64,7 @@ export type CharacterFrameSet = Record<CharacterFrameName, PixelSprite>;
 // Map
 // ---------------------------------------------------------------------------
 
-export const PIXEL_TILE_SIZE = 16;
+export const PIXEL_TILE_SIZE = 32;
 
 /** Ground tile ids paintable in the ASCII grid. */
 export type PixelGroundTile =

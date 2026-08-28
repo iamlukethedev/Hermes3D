@@ -48,11 +48,11 @@ const SEATED_STATION_KINDS: ReadonlySet<PixelStationKind> = new Set([
 const WALK_FRAME_MS = 140;
 const DANCE_FRAME_MS = 260;
 
-const MIN_ZOOM = 0.5;
-const MAX_ZOOM = 4;
+const MIN_ZOOM = 0.35;
+const MAX_ZOOM = 2;
 
 /** World-space radius around an agent's body that accepts clicks. */
-const AGENT_CLICK_RADIUS = 14;
+const AGENT_CLICK_RADIUS = 28;
 
 type AgentVisual = {
   container: Phaser.GameObjects.Container;
@@ -203,16 +203,16 @@ export const createPixelOfficeScene = (params: {
       for (const zoneEntry of map.zones) {
         if (!zoneEntry.label) continue;
         const centerX = (zoneEntry.tx + zoneEntry.tw / 2) * TILE;
-        const topY = zoneEntry.ty * TILE + 22;
+        const topY = zoneEntry.ty * TILE + 44;
         const text = this.add.text(0, 0, zoneEntry.label, {
           fontFamily: "system-ui, sans-serif",
-          fontSize: "8px",
+          fontSize: "16px",
           color: "#5b5346",
         });
-        text.setResolution(6);
+        text.setResolution(4);
         text.setOrigin(0.5, 0.5);
-        const paddingX = 6;
-        const paddingY = 3;
+        const paddingX = 11;
+        const paddingY = 5;
         const bg = this.add.graphics();
         bg.fillStyle(0xf7f1e3, 0.92);
         bg.fillRoundedRect(
@@ -263,7 +263,7 @@ export const createPixelOfficeScene = (params: {
       // Gather-style default: start close enough that the pixel art reads at
       // 1:1+ detail, centered on the main pods. Wheel out for the overview.
       const zoom = PhaserLib.Math.Clamp(
-        Math.max(1.5, Math.floor(this.containZoom() * 4) / 4),
+        Math.max(0.75, Math.floor(this.containZoom() * 4) / 4),
         this.minZoom(),
         MAX_ZOOM,
       );
@@ -385,7 +385,7 @@ export const createPixelOfficeScene = (params: {
     }
 
     private createVisual(id: string, name: string): AgentVisual {
-      const shadow = this.add.ellipse(0, -1, 15, 6, 0x000000, 0.2);
+      const shadow = this.add.ellipse(0, -2, 30, 11, 0x000000, 0.2);
       const sprite = this.add.image(0, 0, `char_${id}_idle_down`);
       sprite.setOrigin(0.5, 1);
       // Clicks are resolved scene-wide via pickAgentAt (more forgiving for
@@ -398,41 +398,41 @@ export const createPixelOfficeScene = (params: {
       const nameBg = this.add.graphics();
       const nameText = this.add.text(0, 0, name, {
         fontFamily: "system-ui, sans-serif",
-        fontSize: "7px",
+        fontSize: "14px",
         color: "#f4f7ff",
         fontStyle: "bold",
       });
-      nameText.setResolution(6);
+      nameText.setResolution(4);
       nameText.setOrigin(0.5, 0.5);
-      const statusDot = this.add.circle(0, 0, 2, 0x4ade80);
+      const statusDot = this.add.circle(0, 0, 4, 0x4ade80);
       const bubbleBg = this.add.graphics();
       const bubbleText = this.add.text(0, 0, "", {
         fontFamily: "system-ui, sans-serif",
-        fontSize: "6px",
+        fontSize: "12px",
         color: "#2b2b3a",
         align: "left",
-        wordWrap: { width: 88 },
+        wordWrap: { width: 170 },
       });
-      bubbleText.setResolution(6);
+      bubbleText.setResolution(4);
       bubbleText.setOrigin(0.5, 1);
       const thinkText = this.add.text(0, 0, "…", {
         fontFamily: "system-ui, sans-serif",
-        fontSize: "9px",
+        fontSize: "18px",
         color: "#2b2b3a",
         backgroundColor: "#f4f7ff",
-        padding: { left: 3, right: 3, top: 0, bottom: 1 },
+        padding: { left: 6, right: 6, top: 0, bottom: 2 },
       });
-      thinkText.setResolution(6);
+      thinkText.setResolution(4);
       thinkText.setOrigin(0.5, 1);
       const badgeText = this.add.text(0, 0, "!", {
         fontFamily: "system-ui, sans-serif",
-        fontSize: "8px",
+        fontSize: "16px",
         color: "#1f1303",
         fontStyle: "bold",
         backgroundColor: "#fbbf24",
-        padding: { left: 3, right: 3, top: 0, bottom: 1 },
+        padding: { left: 6, right: 6, top: 0, bottom: 2 },
       });
-      badgeText.setResolution(6);
+      badgeText.setResolution(4);
       badgeText.setOrigin(0.5, 1);
       const overlay = this.add.container(0, 0, [
         nameBg,
@@ -502,7 +502,7 @@ export const createPixelOfficeScene = (params: {
         visual.sprite.setTexture(frameKey);
       }
 
-      const overlayY = pose.y + TILE / 2 - CHARACTER_HEIGHT - 4;
+      const overlayY = pose.y + TILE / 2 - CHARACTER_HEIGHT - 8;
       visual.overlay.setPosition(pose.x, overlayY);
 
       // Nameplate pill with the status dot.
@@ -513,13 +513,13 @@ export const createPixelOfficeScene = (params: {
         visual.lastStatus = status;
         visual.nameText.setText(name.length > 16 ? `${name.slice(0, 15)}…` : name);
       }
-      const plateWidth = visual.nameText.width + 14;
-      const plateHeight = 10;
+      const plateWidth = visual.nameText.width + 26;
+      const plateHeight = 20;
       visual.nameBg.clear();
       visual.nameBg.fillStyle(0x11131c, 0.82);
-      visual.nameBg.fillRoundedRect(-plateWidth / 2, -plateHeight / 2, plateWidth, plateHeight, 4);
-      visual.nameText.setPosition(3, 0);
-      visual.statusDot.setPosition(-plateWidth / 2 + 5, 0);
+      visual.nameBg.fillRoundedRect(-plateWidth / 2, -plateHeight / 2, plateWidth, plateHeight, 8);
+      visual.nameText.setPosition(5, 0);
+      visual.statusDot.setPosition(-plateWidth / 2 + 9, 0);
       visual.statusDot.setFillStyle(STATUS_DOT_COLOR[status] ?? 0x9ca3af);
       if (status === "working") {
         visual.statusDot.setAlpha(0.6 + 0.4 * Math.abs(Math.sin(this.animClock / 400)));
@@ -529,7 +529,7 @@ export const createPixelOfficeScene = (params: {
 
       // Speech bubble (streaming text tail) with a short linger after the
       // stream finishes so quick replies stay readable.
-      const bubbleTail = bubble.trim().length > 0 ? tailOf(bubble, 90) : "";
+      const bubbleTail = bubble.trim().length > 0 ? tailOf(bubble, 110) : "";
       if (bubbleTail !== visual.lastBubble) {
         visual.lastBubble = bubbleTail;
         if (bubbleTail.length > 0) {
@@ -545,16 +545,16 @@ export const createPixelOfficeScene = (params: {
       visual.bubbleBg.setVisible(showBubble);
       visual.bubbleText.setVisible(showBubble);
       if (showBubble) {
-        const bw = visual.bubbleText.width + 10;
-        const bh = visual.bubbleText.height + 8;
-        const by = -8;
-        visual.bubbleText.setPosition(0, by - 4);
+        const bw = visual.bubbleText.width + 18;
+        const bh = visual.bubbleText.height + 14;
+        const by = -14;
+        visual.bubbleText.setPosition(0, by - 7);
         visual.bubbleBg.clear();
         visual.bubbleBg.fillStyle(0xf9fbff, 0.96);
-        visual.bubbleBg.lineStyle(1, 0x2b2b3a, 0.9);
-        visual.bubbleBg.fillRoundedRect(-bw / 2, by - bh, bw, bh, 4);
-        visual.bubbleBg.strokeRoundedRect(-bw / 2, by - bh, bw, bh, 4);
-        visual.bubbleBg.fillTriangle(-3, by, 3, by, 0, by + 4);
+        visual.bubbleBg.lineStyle(2, 0x2b2b3a, 0.9);
+        visual.bubbleBg.fillRoundedRect(-bw / 2, by - bh, bw, bh, 7);
+        visual.bubbleBg.strokeRoundedRect(-bw / 2, by - bh, bw, bh, 7);
+        visual.bubbleBg.fillTriangle(-6, by, 6, by, 0, by + 7);
       }
 
       // Thinking dots (hidden while a speech bubble is visible).
@@ -563,14 +563,14 @@ export const createPixelOfficeScene = (params: {
       if (thinking) {
         const dots = 1 + (Math.floor(this.animClock / 350) % 3);
         visual.thinkText.setText(".".repeat(dots));
-        visual.thinkText.setPosition(10, -8);
+        visual.thinkText.setPosition(20, -14);
       }
 
       // Approval badge.
       const approval = Boolean(input?.awaitingApproval);
       visual.badgeText.setVisible(approval);
       if (approval) {
-        visual.badgeText.setPosition(-11, -8);
+        visual.badgeText.setPosition(-22, -14);
         visual.badgeText.setAlpha(0.75 + 0.25 * Math.sin(this.animClock / 250));
       }
     }

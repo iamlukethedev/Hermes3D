@@ -67,7 +67,7 @@ function expectPaletteCovers(sprite: PixelSprite): void {
 }
 
 describe("pixel office art", () => {
-  it("provides a 16x16 sprite for every paintable ground tile plus alt variants", () => {
+  it("provides a tile-sized sprite for every paintable ground tile plus alt variants", () => {
     const sprites = buildGroundTileSprites();
     const byKey = new Map(sprites.map((s) => [s.key, s]));
 
@@ -113,7 +113,7 @@ describe("pixel office art", () => {
     expect(sprites).toHaveLength(kinds.length);
   });
 
-  it("builds all character frames at exactly 20x30 with covered palettes", () => {
+  it("builds all character frames at the exact character dimensions with covered palettes", () => {
     const frames = buildCharacterFrames({ seed: "agent-alpha", accentColor: "#e06c50" });
     for (const name of FRAME_NAMES) {
       const sprite = frames[name];
