@@ -14,9 +14,13 @@ const securityHeaders = [
       "style-src 'self' 'unsafe-inline' https:",
       // 'unsafe-eval' is required by Next.js dev mode (source maps, HMR).
       // In production it is dropped — React and Three.js do not need eval.
+      // 'wasm-unsafe-eval' is required in production too: a three.js chunk
+      // (draco/basis decoder) calls WebAssembly.instantiate during module
+      // evaluation, and without it the whole chunk fails and the agent
+      // roster never renders (observed 2026-08-27, local patch).
       ...(process.env.NODE_ENV !== "production"
         ? ["script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:"]
-        : ["script-src 'self' 'unsafe-inline' blob:"]),
+        : ["script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' blob:"]),
       // connect-src is intentionally broad: gateway URLs are user-configured
       // at runtime and cannot be enumerated at build time.
       // Restrict further when a fixed deployment target is known.

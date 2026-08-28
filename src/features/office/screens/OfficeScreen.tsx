@@ -2443,10 +2443,25 @@ export function OfficeScreen({
     [requestAgentHistoryRefresh],
   );
 
+  // Local patch (2026-08-27): the demo-adapter placeholder seed below sets
+  // agentsLoaded=true while disconnected, so when the (auto-)connect lands a
+  // moment later this effect used to skip hydration and the office stayed
+  // stuck on the lone "Main" placeholder. When connected and the fleet is
+  // still exactly that placeholder, force one reload per connection.
+  const demoPlaceholderReloadRef = useRef(false);
   useEffect(() => {
-    if (status !== "connected" || agentsLoaded) return;
+    if (status !== "connected") {
+      demoPlaceholderReloadRef.current = false;
+      return;
+    }
+    const onlyDemoPlaceholder =
+      state.agents.length === 1 && state.agents[0]?.agentId === MAIN_AGENT_ID;
+    const shouldRecoverFromPlaceholder =
+      onlyDemoPlaceholder && !demoPlaceholderReloadRef.current;
+    if (agentsLoaded && !shouldRecoverFromPlaceholder) return;
+    if (shouldRecoverFromPlaceholder) demoPlaceholderReloadRef.current = true;
     void loadAgents({ forceSettings: true });
-  }, [agentsLoaded, loadAgents, status]);
+  }, [agentsLoaded, loadAgents, state.agents, status]);
 
   useEffect(() => {
     if (status !== "connected") return;
