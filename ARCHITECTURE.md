@@ -82,6 +82,7 @@ This keeps the upstream connection server-managed and makes local, remote, and t
 - `src/features/agents`: agents workspace UI and agent-runtime state handling.
 - `src/features/office`: office screens, panels, and builder UI.
 - `src/features/retro-office`: 3D scene, navigation, actors, and rendering helpers.
+- `src/features/pixel-office`: the 2D pixel office (Gather-style Phaser renderer). Consumes the same agent roster and animation state as the 3D scene; users switch renderers via the office settings ("Office renderer") persisted in localStorage.
 - `src/lib`: gateway adapters, Studio settings, office derivation logic, and shared utilities.
 - `server`: custom Studio server and WebSocket proxy.
 

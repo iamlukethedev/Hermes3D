@@ -4,6 +4,10 @@ import type { GatewayStatus } from "@/lib/gateway/GatewayClient";
 import { isLocalGatewayUrl } from "@/lib/gateway/local-gateway";
 import { inspectUpstreamGatewayUrl } from "@/lib/gateway/upstreamUrlDiagnostics";
 import type { StudioGatewayAdapterType, StudioGatewaySettings } from "@/lib/studio/settings";
+import {
+  OFFICE_RENDER_MODE_OPTIONS,
+  type OfficeRenderMode,
+} from "@/features/office/renderMode";
 import { RunningAvatarLoader } from "@/features/agents/components/RunningAvatarLoader";
 
 type GatewayConnectScreenProps = {
@@ -19,6 +23,9 @@ type GatewayConnectScreenProps = {
   onAdapterTypeChange: (value: StudioGatewayAdapterType) => void;
   onUseLocalDefaults: () => void;
   onConnect: () => void;
+  /** When provided, shows the 3D/2D office renderer choice before connecting. */
+  renderMode?: OfficeRenderMode;
+  onRenderModeChange?: (mode: OfficeRenderMode) => void;
 };
 
 const resolveLocalGatewayPort = (gatewayUrl: string): number => {
@@ -43,6 +50,8 @@ export const GatewayConnectScreen = ({
   onAdapterTypeChange,
   onUseLocalDefaults,
   onConnect,
+  renderMode,
+  onRenderModeChange,
 }: GatewayConnectScreenProps) => {
   const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "failed">("idle");
   const [showToken, setShowToken] = useState(false);
@@ -262,6 +271,44 @@ export const GatewayConnectScreen = ({
           <p className="text-sm font-semibold text-foreground">{statusCopy}</p>
         </div>
       </div>
+
+      {renderMode && onRenderModeChange ? (
+        <div className="ui-card px-4 py-4 sm:px-6">
+          <p className="font-mono text-[10px] font-medium tracking-[0.06em] text-muted-foreground">
+            Office renderer
+          </p>
+          <p className="mt-2 text-sm text-foreground/90">
+            Pick before connecting — nothing heavy loads until you do.
+          </p>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            {OFFICE_RENDER_MODE_OPTIONS.map((option) => {
+              const selected = renderMode === option.id;
+              return (
+                <button
+                  key={option.id}
+                  type="button"
+                  aria-pressed={selected}
+                  data-testid={`connect-render-mode-${option.id}`}
+                  className={`rounded-md border px-3 py-2.5 text-left transition-colors ${
+                    selected
+                      ? "border-amber-500/70 bg-amber-500/10"
+                      : "border-border bg-muted/30 hover:border-amber-500/35"
+                  }`}
+                  onClick={() => onRenderModeChange(option.id)}
+                >
+                  <span className="flex items-center gap-2 text-xs font-semibold text-foreground">
+                    {option.label}
+                    {selected ? <Check className="h-3.5 w-3.5 text-amber-400" /> : null}
+                  </span>
+                  <span className="mt-1 block text-xs leading-snug text-muted-foreground">
+                    {option.description}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
 
       <div className="ui-card px-4 py-5 sm:px-6">
         <div>

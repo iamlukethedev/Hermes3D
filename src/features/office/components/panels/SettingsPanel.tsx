@@ -7,6 +7,10 @@ import {
   GRAPHICS_QUALITY_OPTIONS,
   type GraphicsQuality,
 } from "@/features/retro-office/core/graphicsQuality";
+import {
+  OFFICE_RENDER_MODE_OPTIONS,
+  type OfficeRenderMode,
+} from "@/features/office/renderMode";
 
 type SettingsPanelProps = {
   gatewayStatus?: string;
@@ -45,6 +49,8 @@ type SettingsPanelProps = {
   onVoiceRepliesPreview: (voiceId: string | null, voiceName: string) => void;
   graphicsQuality?: GraphicsQuality;
   onGraphicsQualityChange?: (quality: GraphicsQuality) => void;
+  renderMode?: OfficeRenderMode;
+  onRenderModeChange?: (mode: OfficeRenderMode) => void;
 };
 
 export function SettingsPanel({
@@ -84,6 +90,8 @@ export function SettingsPanel({
   onVoiceRepliesPreview,
   graphicsQuality,
   onGraphicsQualityChange,
+  renderMode,
+  onRenderModeChange,
 }: SettingsPanelProps) {
   const normalizedGatewayUrl = gatewayUrl?.trim() ?? "";
   const normalizedGatewayToken = gatewayToken ?? "";
@@ -433,6 +441,41 @@ export function SettingsPanel({
           </button>
         </div>
       </div>
+      {renderMode && onRenderModeChange ? (
+        <div className="mt-3 rounded-lg border border-cyan-500/10 bg-black/20 px-4 py-3">
+          <div className="text-[11px] font-medium text-white">Office renderer</div>
+          <div className="mt-1 text-[10px] text-white/75">
+            Pick the immersive 3D office or the lightweight 2D pixel office.
+          </div>
+          <div className="mt-3 grid gap-2">
+            {OFFICE_RENDER_MODE_OPTIONS.map((option) => {
+              const selected = option.id === renderMode;
+              return (
+                <button
+                  key={option.id}
+                  type="button"
+                  onClick={() => onRenderModeChange(option.id)}
+                  className={`rounded-lg border px-3 py-2 text-left transition-colors ${
+                    selected
+                      ? "border-cyan-400/40 bg-cyan-500/12 text-white"
+                      : "border-cyan-500/10 bg-black/15 text-white/80 hover:border-cyan-400/20 hover:bg-cyan-500/6"
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] font-medium">{option.label}</span>
+                    {selected ? (
+                      <span className="rounded-full border border-cyan-400/35 bg-cyan-500/15 px-2 py-0.5 text-[9px] uppercase tracking-[0.14em] text-cyan-100">
+                        Active
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="mt-1 text-[10px] text-white/65">{option.description}</div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
       {graphicsQuality && onGraphicsQualityChange ? (
         <div className="mt-3 rounded-lg border border-cyan-500/10 bg-black/20 px-4 py-3">
           <div className="text-[11px] font-medium text-white">Graphics quality</div>
