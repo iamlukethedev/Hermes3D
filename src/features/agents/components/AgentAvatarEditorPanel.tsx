@@ -5,6 +5,7 @@ import { RefreshCcw, Shuffle } from "lucide-react";
 import {
   AGENT_AVATAR_BOTTOM_STYLE_OPTIONS,
   AGENT_AVATAR_CLOTHING_COLOR_OPTIONS,
+  AGENT_AVATAR_FEMALE_PRESETS,
   AGENT_AVATAR_HAIR_COLOR_OPTIONS,
   AGENT_AVATAR_HAIR_STYLE_OPTIONS,
   AGENT_AVATAR_HAT_STYLE_OPTIONS,
@@ -12,6 +13,7 @@ import {
   AGENT_AVATAR_SKIN_TONE_OPTIONS,
   AGENT_AVATAR_TOP_STYLE_OPTIONS,
   type AgentAvatarProfile,
+  applyAgentAvatarFemalePreset,
   createDefaultAgentAvatarProfile,
 } from "@/lib/avatars/profile";
 import { AgentAvatarPreview3D } from "@/features/agents/components/AgentAvatarPreview3D";
@@ -151,6 +153,46 @@ export const AgentAvatarEditorPanel = forwardRef<
             </button>
           </div>
         ) : null}
+        <section className="mb-6 space-y-3 border-b border-border/40 pb-6">
+          <div>
+            <h3 className="font-mono text-[11px] font-semibold tracking-[0.06em] text-muted-foreground">
+              Female presets
+            </h3>
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              Applies hair, outfit, and colors while keeping skin tone and accessories.
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            {AGENT_AVATAR_FEMALE_PRESETS.map((preset) => {
+              const selected =
+                draft.hair.style === preset.hairStyle &&
+                draft.hair.color === preset.hairColor &&
+                draft.clothing.topStyle === preset.topStyle &&
+                draft.clothing.topColor === preset.topColor &&
+                draft.clothing.bottomStyle === preset.bottomStyle &&
+                draft.clothing.bottomColor === preset.bottomColor;
+              return (
+                <button
+                  key={preset.id}
+                  type="button"
+                  aria-label={`Apply ${preset.label} preset`}
+                  className={`rounded-lg border px-3 py-2 text-left transition-colors ${
+                    selected
+                      ? "border-primary bg-primary/15 text-foreground"
+                      : "border-border/50 bg-muted/20 text-muted-foreground hover:bg-muted/40"
+                  }`}
+                  onClick={() =>
+                    setDraft((current) => applyAgentAvatarFemalePreset(current, preset.id))
+                  }
+                  disabled={saving}
+                >
+                  <span className="block text-xs font-medium">{preset.label}</span>
+                  <span className="mt-0.5 block text-[10px]">{preset.hairLabel}</span>
+                </button>
+              );
+            })}
+          </div>
+        </section>
         <div className="grid gap-6 xl:grid-cols-2">
           <section className="space-y-3">
             <h3 className="font-mono text-[11px] font-semibold tracking-[0.06em] text-muted-foreground">

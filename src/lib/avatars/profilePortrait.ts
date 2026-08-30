@@ -67,6 +67,39 @@ const buildHairSvg = (profile: AgentAvatarProfile, hairColor: string) => {
         `<rect x="22" y="20" width="36" height="10" rx="4" fill="${hairColor}"/>`,
         `<circle cx="40" cy="15" r="6" fill="${hairColor}"/>`,
       ].join("");
+    case "long":
+      return [
+        `<rect x="21" y="19" width="38" height="12" rx="5" fill="${hairColor}"/>`,
+        `<rect x="20" y="25" width="8" height="30" rx="4" fill="${hairColor}"/>`,
+        `<rect x="52" y="25" width="8" height="30" rx="4" fill="${hairColor}"/>`,
+        `<rect x="24" y="24" width="32" height="8" rx="4" fill="${blendHex(hairColor, "#ffffff", 0.06)}"/>`,
+      ].join("");
+    case "bob":
+      return [
+        `<path d="M21 30 C21 16, 59 16, 59 30 L57 43 L51 43 L50 28 L30 28 L29 43 L23 43 Z" fill="${hairColor}"/>`,
+        `<path d="M25 26 C31 18, 47 17, 55 25 L48 29 L31 29 Z" fill="${blendHex(hairColor, "#ffffff", 0.07)}"/>`,
+      ].join("");
+    case "twin-tails":
+      return [
+        `<rect x="22" y="19" width="36" height="11" rx="4" fill="${hairColor}"/>`,
+        `<circle cx="18" cy="32" r="7" fill="${hairColor}"/>`,
+        `<rect x="14" y="34" width="8" height="18" rx="4" fill="${hairColor}"/>`,
+        `<circle cx="62" cy="32" r="7" fill="${hairColor}"/>`,
+        `<rect x="58" y="34" width="8" height="18" rx="4" fill="${hairColor}"/>`,
+      ].join("");
+    case "ponytail":
+      return [
+        `<rect x="22" y="19" width="36" height="11" rx="4" fill="${hairColor}"/>`,
+        `<circle cx="59" cy="27" r="6" fill="${hairColor}"/>`,
+        `<path d="M59 29 C70 31, 68 46, 61 52 C64 43, 57 39, 59 29 Z" fill="${hairColor}"/>`,
+      ].join("");
+    case "long-wave":
+      return [
+        `<rect x="21" y="19" width="38" height="12" rx="5" fill="${hairColor}"/>`,
+        `<path d="M22 25 C16 31, 26 35, 20 41 C15 46, 25 50, 20 56 L29 56 L30 27 Z" fill="${hairColor}"/>`,
+        `<path d="M58 25 C64 31, 54 35, 60 41 C65 46, 55 50, 60 56 L51 56 L50 27 Z" fill="${hairColor}"/>`,
+        `<path d="M25 25 C34 18, 48 18, 55 25 L49 29 L31 29 Z" fill="${blendHex(hairColor, "#ffffff", 0.08)}"/>`,
+      ].join("");
     default:
       return "";
   }

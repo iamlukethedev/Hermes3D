@@ -616,6 +616,9 @@ export const AgentModel = memo(function AgentModel({
   const showHeadset = resolvedAppearance.accessories.headset;
   const showBackpack = resolvedAppearance.accessories.backpack;
   const accessoryColor = topColor;
+  const isLongDress = topStyle === "long-dress";
+  const isShortDress = topStyle === "short-dress";
+  const isDress = isLongDress || isShortDress;
   const sleeveColor = topStyle === "jacket" ? "#dbe4ff" : topColor;
   const cuffColor = topStyle === "hoodie" ? "#d1d5db" : sleeveColor;
   // Jacket accent brightened ~10% so it doesn't turn muddy under ACES tone mapping.
@@ -747,7 +750,12 @@ export const AgentModel = memo(function AgentModel({
         <meshBasicMaterial color="#000" transparent opacity={0.2} />
       </mesh>
       <group ref={rightLegRef} position={[-0.045, 0.1, 0]}>
-        {bottomStyle === "shorts" ? (
+        {isDress || bottomStyle === "long-skirt" || bottomStyle === "mini-skirt" ? (
+          <mesh castShadow>
+            <boxGeometry args={[0.05, 0.14, 0.05]} />
+            <meshStandardMaterial color={skin} roughness={0.55} />
+          </mesh>
+        ) : bottomStyle === "shorts" ? (
           <>
             <mesh position={[0, 0.03, 0]} castShadow>
               <boxGeometry args={[0.07, 0.08, 0.08]} />
@@ -755,6 +763,17 @@ export const AgentModel = memo(function AgentModel({
             </mesh>
             <mesh position={[0, -0.045, 0]} castShadow>
               <boxGeometry args={[0.05, 0.06, 0.05]} />
+              <meshStandardMaterial color={skin} roughness={0.55} />
+            </mesh>
+          </>
+        ) : bottomStyle === "hot-pants" ? (
+          <>
+            <mesh position={[0, 0.052, 0]} castShadow>
+              <boxGeometry args={[0.07, 0.04, 0.08]} />
+              <meshStandardMaterial color={trouserColor} roughness={0.75} />
+            </mesh>
+            <mesh position={[0, -0.025, 0]} castShadow>
+              <boxGeometry args={[0.05, 0.1, 0.05]} />
               <meshStandardMaterial color={skin} roughness={0.55} />
             </mesh>
           </>
@@ -778,7 +797,12 @@ export const AgentModel = memo(function AgentModel({
         </mesh>
       </group>
       <group ref={leftLegRef} position={[0.045, 0.1, 0]}>
-        {bottomStyle === "shorts" ? (
+        {isDress || bottomStyle === "long-skirt" || bottomStyle === "mini-skirt" ? (
+          <mesh castShadow>
+            <boxGeometry args={[0.05, 0.14, 0.05]} />
+            <meshStandardMaterial color={skin} roughness={0.55} />
+          </mesh>
+        ) : bottomStyle === "shorts" ? (
           <>
             <mesh position={[0, 0.03, 0]} castShadow>
               <boxGeometry args={[0.07, 0.08, 0.08]} />
@@ -786,6 +810,17 @@ export const AgentModel = memo(function AgentModel({
             </mesh>
             <mesh position={[0, -0.045, 0]} castShadow>
               <boxGeometry args={[0.05, 0.06, 0.05]} />
+              <meshStandardMaterial color={skin} roughness={0.55} />
+            </mesh>
+          </>
+        ) : bottomStyle === "hot-pants" ? (
+          <>
+            <mesh position={[0, 0.052, 0]} castShadow>
+              <boxGeometry args={[0.07, 0.04, 0.08]} />
+              <meshStandardMaterial color={trouserColor} roughness={0.75} />
+            </mesh>
+            <mesh position={[0, -0.025, 0]} castShadow>
+              <boxGeometry args={[0.05, 0.1, 0.05]} />
               <meshStandardMaterial color={skin} roughness={0.55} />
             </mesh>
           </>
@@ -808,6 +843,18 @@ export const AgentModel = memo(function AgentModel({
           <meshStandardMaterial color={shoeColor} roughness={0.75} />
         </mesh>
       </group>
+      {!isDress && bottomStyle === "long-skirt" ? (
+        <mesh position={[0, 0.13, 0]} rotation={[0, Math.PI / 4, 0]} castShadow>
+          <cylinderGeometry args={[0.08, 0.135, 0.24, 4]} />
+          <meshStandardMaterial color={trouserColor} roughness={0.72} />
+        </mesh>
+      ) : null}
+      {!isDress && bottomStyle === "mini-skirt" ? (
+        <mesh position={[0, 0.205, 0]} rotation={[0, Math.PI / 4, 0]} castShadow>
+          <cylinderGeometry args={[0.085, 0.12, 0.085, 4]} />
+          <meshStandardMaterial color={trouserColor} roughness={0.72} />
+        </mesh>
+      ) : null}
       {showBackpack ? (
         <group position={[0, 0.28, -0.08]}>
           <mesh castShadow>
@@ -828,6 +875,18 @@ export const AgentModel = memo(function AgentModel({
         <boxGeometry args={[0.18, 0.2, 0.1]} />
         <meshStandardMaterial ref={bodyMatRef} color={topColor} roughness={0.75} />
       </mesh>
+      {isLongDress ? (
+        <mesh position={[0, 0.15, 0]} rotation={[0, Math.PI / 4, 0]} castShadow>
+          <cylinderGeometry args={[0.09, 0.14, 0.27, 4]} />
+          <meshStandardMaterial color={topColor} roughness={0.7} />
+        </mesh>
+      ) : null}
+      {isShortDress ? (
+        <mesh position={[0, 0.195, 0]} rotation={[0, Math.PI / 4, 0]} castShadow>
+          <cylinderGeometry args={[0.09, 0.13, 0.135, 4]} />
+          <meshStandardMaterial color={topColor} roughness={0.7} />
+        </mesh>
+      ) : null}
       {topStyle === "hoodie" ? (
         <>
           <mesh position={[0, 0.35, -0.045]} castShadow>
@@ -852,12 +911,40 @@ export const AgentModel = memo(function AgentModel({
           </mesh>
         </>
       ) : null}
+      {topStyle === "sweater" ? (
+        <>
+          <mesh position={[0, 0.37, 0.056]}>
+            <boxGeometry args={[0.09, 0.024, 0.012]} />
+            <meshStandardMaterial color="#e5e7eb" roughness={0.78} />
+          </mesh>
+          <mesh position={[0, 0.195, 0.056]}>
+            <boxGeometry args={[0.175, 0.024, 0.012]} />
+            <meshStandardMaterial color="#e5e7eb" roughness={0.78} />
+          </mesh>
+        </>
+      ) : null}
+      {topStyle === "shirt" ? (
+        <>
+          <mesh position={[0, 0.28, 0.057]}>
+            <boxGeometry args={[0.016, 0.19, 0.012]} />
+            <meshStandardMaterial color="#cbd5e1" roughness={0.7} />
+          </mesh>
+          <mesh position={[-0.032, 0.365, 0.058]} rotation={[0, 0, -0.4]}>
+            <boxGeometry args={[0.07, 0.024, 0.012]} />
+            <meshStandardMaterial color="#f8fafc" roughness={0.7} />
+          </mesh>
+          <mesh position={[0.032, 0.365, 0.058]} rotation={[0, 0, 0.4]}>
+            <boxGeometry args={[0.07, 0.024, 0.012]} />
+            <meshStandardMaterial color="#f8fafc" roughness={0.7} />
+          </mesh>
+        </>
+      ) : null}
       <group ref={rightArmRef} position={[-0.12, 0.28, 0]}>
         <mesh position={[0, -0.08, 0]} castShadow>
           <boxGeometry args={[0.06, 0.16, 0.06]} />
           <meshStandardMaterial color={sleeveColor} roughness={0.75} />
         </mesh>
-        {topStyle === "hoodie" ? (
+        {topStyle === "hoodie" || topStyle === "sweater" ? (
           <mesh position={[0, -0.145, 0]}>
             <boxGeometry args={[0.064, 0.03, 0.064]} />
             <meshStandardMaterial color={cuffColor} roughness={0.75} />
@@ -960,7 +1047,7 @@ export const AgentModel = memo(function AgentModel({
           <boxGeometry args={[0.06, 0.16, 0.06]} />
           <meshStandardMaterial color={sleeveColor} roughness={0.75} />
         </mesh>
-        {topStyle === "hoodie" ? (
+        {topStyle === "hoodie" || topStyle === "sweater" ? (
           <mesh position={[0, -0.145, 0]}>
             <boxGeometry args={[0.064, 0.03, 0.064]} />
             <meshStandardMaterial color={cuffColor} roughness={0.75} />
@@ -1032,6 +1119,95 @@ export const AgentModel = memo(function AgentModel({
             <sphereGeometry args={[0.042, 14, 14]} />
             <meshStandardMaterial color={hairColor} roughness={0.35} metalness={0.05} />
           </mesh>
+        </>
+      ) : null}
+      {hairStyle === "long" ? (
+        <>
+          <mesh position={[0, 0.55, -0.02]} castShadow>
+            <boxGeometry args={[0.17, 0.05, 0.15]} />
+            <meshStandardMaterial color={hairColor} roughness={0.35} metalness={0.05} />
+          </mesh>
+          <mesh position={[0, 0.44, -0.07]} castShadow>
+            <boxGeometry args={[0.16, 0.23, 0.04]} />
+            <meshStandardMaterial color={hairColor} roughness={0.35} metalness={0.05} />
+          </mesh>
+          {[-0.085, 0.085].map((x) => (
+            <mesh key={x} position={[x, 0.45, 0.005]} castShadow>
+              <boxGeometry args={[0.032, 0.2, 0.065]} />
+              <meshStandardMaterial color={hairColor} roughness={0.35} metalness={0.05} />
+            </mesh>
+          ))}
+        </>
+      ) : null}
+      {hairStyle === "bob" ? (
+        <>
+          <mesh position={[0, 0.55, 0]} castShadow>
+            <boxGeometry args={[0.17, 0.05, 0.15]} />
+            <meshStandardMaterial color={hairColor} roughness={0.35} metalness={0.05} />
+          </mesh>
+          {[-0.09, 0.09].map((x) => (
+            <mesh key={x} position={[x, 0.49, 0]} castShadow>
+              <boxGeometry args={[0.032, 0.12, 0.14]} />
+              <meshStandardMaterial color={hairColor} roughness={0.35} metalness={0.05} />
+            </mesh>
+          ))}
+        </>
+      ) : null}
+      {hairStyle === "twin-tails" ? (
+        <>
+          <mesh position={[0, 0.55, 0]} castShadow>
+            <boxGeometry args={[0.17, 0.05, 0.15]} />
+            <meshStandardMaterial color={hairColor} roughness={0.35} metalness={0.05} />
+          </mesh>
+          {[-0.115, 0.115].map((x) => (
+            <group key={x} position={[x, 0.485, -0.01]}>
+              <mesh position={[0, 0.055, 0]} castShadow>
+                <sphereGeometry args={[0.038, 12, 12]} />
+                <meshStandardMaterial color={hairColor} roughness={0.35} metalness={0.05} />
+              </mesh>
+              <mesh position={[0, -0.04, 0]} castShadow>
+                <boxGeometry args={[0.05, 0.17, 0.055]} />
+                <meshStandardMaterial color={hairColor} roughness={0.35} metalness={0.05} />
+              </mesh>
+            </group>
+          ))}
+        </>
+      ) : null}
+      {hairStyle === "ponytail" ? (
+        <>
+          <mesh position={[0, 0.55, 0]} castShadow>
+            <boxGeometry args={[0.17, 0.05, 0.15]} />
+            <meshStandardMaterial color={hairColor} roughness={0.35} metalness={0.05} />
+          </mesh>
+          <mesh position={[0, 0.535, -0.1]} castShadow>
+            <sphereGeometry args={[0.042, 12, 12]} />
+            <meshStandardMaterial color={hairColor} roughness={0.35} metalness={0.05} />
+          </mesh>
+          <mesh position={[0, 0.44, -0.115]} rotation={[0.15, 0, 0]} castShadow>
+            <boxGeometry args={[0.055, 0.19, 0.055]} />
+            <meshStandardMaterial color={hairColor} roughness={0.35} metalness={0.05} />
+          </mesh>
+        </>
+      ) : null}
+      {hairStyle === "long-wave" ? (
+        <>
+          <mesh position={[0, 0.55, -0.02]} castShadow>
+            <boxGeometry args={[0.17, 0.05, 0.15]} />
+            <meshStandardMaterial color={hairColor} roughness={0.35} metalness={0.05} />
+          </mesh>
+          {[-0.09, 0.09].flatMap((x) =>
+            [0.49, 0.42, 0.35].map((y, index) => (
+              <mesh
+                key={`${x}-${y}`}
+                position={[x + (index % 2 === 0 ? -0.007 : 0.007) * Math.sign(x), y, -0.015]}
+                rotation={[0, 0, (index % 2 === 0 ? 0.12 : -0.12) * Math.sign(x)]}
+                castShadow
+              >
+                <boxGeometry args={[0.04, 0.09, 0.065]} />
+                <meshStandardMaterial color={hairColor} roughness={0.35} metalness={0.05} />
+              </mesh>
+            )),
+          )}
         </>
       ) : null}
       {hatStyle === "cap" ? (
