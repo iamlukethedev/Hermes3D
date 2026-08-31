@@ -9,3 +9,5 @@ platforms:
   - windows
 hooks:
   - post_llm_call
+provides_hooks:
+  - post_llm_call
