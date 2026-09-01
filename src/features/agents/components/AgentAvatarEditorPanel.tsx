@@ -15,6 +15,7 @@ import {
   createDefaultAgentAvatarProfile,
 } from "@/lib/avatars/profile";
 import { AgentAvatarPreview3D } from "@/features/agents/components/AgentAvatarPreview3D";
+import { useManagedAgentModelSpec } from "@/features/retro-office/objects/agentGlb";
 import { randomUUID } from "@/lib/uuid";
 
 export type AgentAvatarEditorPanelProps = {
@@ -66,6 +67,23 @@ export const AgentAvatarEditorPanel = forwardRef<
   const [draft, setDraft] = useState<AgentAvatarProfile>(resolvedInitialProfile);
   const [saving, setSaving] = useState(false);
 
+  // Agents with a managed-fleet GLB render that model in the office instead of
+  // the procedural box person, so these controls cannot change how they look
+  // there. They still drive the 2D portrait, so the options are locked rather
+  // than removed — see `agentGlb.tsx` and `profilePortrait.ts`.
+  const fleetModel = useManagedAgentModelSpec(agentId);
+  const [portraitUnlocked, setPortraitUnlocked] = useState(false);
+  const controlsLocked = Boolean(fleetModel) && !portraitUnlocked;
+  const fleetModelName = useMemo(() => {
+    if (!fleetModel) return null;
+    const raw = fleetModel.url.split("/").pop() ?? "";
+    try {
+      return decodeURIComponent(raw);
+    } catch {
+      return raw;
+    }
+  }, [fleetModel]);
+
   useEffect(() => {
     setDraft(resolvedInitialProfile);
   }, [resolvedInitialProfile]);
@@ -101,17 +119,29 @@ export const AgentAvatarEditorPanel = forwardRef<
         </div>
         <div className="mt-1 text-lg font-semibold text-foreground">{agentName}</div>
         <div className="mt-1 text-xs text-muted-foreground">
-          Personalize this office avatar locally on this machine.
+          {fleetModel
+            ? "Office body comes from the managed fleet. These options style the 2D portrait only."
+            : "Personalize this office avatar locally on this machine."}
         </div>
         <div className="mt-4 overflow-hidden rounded-xl border border-border/45 bg-[#070b16]">
-          <AgentAvatarPreview3D profile={draft} className="h-[360px] w-full" />
+          <AgentAvatarPreview3D
+            profile={draft}
+            modelSpec={controlsLocked ? fleetModel : null}
+            seed={agentId}
+            className="h-[360px] w-full"
+          />
         </div>
+        {fleetModel ? (
+          <div className="mt-2 text-center font-mono text-[10px] tracking-[0.06em] text-muted-foreground">
+            {controlsLocked ? fleetModelName : "2D portrait preview"}
+          </div>
+        ) : null}
         <div className="mt-4 flex flex-wrap gap-2">
           <button
             type="button"
             className="ui-btn-secondary inline-flex items-center gap-2 px-3 py-2 text-xs"
             onClick={() => setDraft(createDefaultAgentAvatarProfile(agentId))}
-            disabled={saving}
+            disabled={saving || controlsLocked}
           >
             <RefreshCcw className="h-3.5 w-3.5" />
             Reset
@@ -120,7 +150,7 @@ export const AgentAvatarEditorPanel = forwardRef<
             type="button"
             className="ui-btn-secondary inline-flex items-center gap-2 px-3 py-2 text-xs"
             onClick={() => setDraft(createDefaultAgentAvatarProfile(randomUUID()))}
-            disabled={saving}
+            disabled={saving || controlsLocked}
           >
             <Shuffle className="h-3.5 w-3.5" />
             Randomize
@@ -151,7 +181,33 @@ export const AgentAvatarEditorPanel = forwardRef<
             </button>
           </div>
         ) : null}
-        <div className="grid gap-6 xl:grid-cols-2">
+        {fleetModel ? (
+          <div className="mb-6 rounded-lg border border-amber-400/25 bg-amber-400/10 p-3">
+            <div className="text-xs font-semibold text-amber-100">
+              Custom fleet model — {fleetModelName}
+            </div>
+            <p className="mt-1 text-[11px] leading-relaxed text-amber-100/70">
+              This agent&apos;s office body is a GLB from the managed fleet, so the options below
+              cannot change how it looks in the office. They still style the 2D portrait used in
+              the roster and chat.
+            </p>
+            {controlsLocked ? (
+              <button
+                type="button"
+                className="ui-btn-secondary mt-3 px-3 py-1.5 text-[11px]"
+                onClick={() => setPortraitUnlocked(true)}
+              >
+                Edit 2D portrait anyway
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+        <fieldset
+          disabled={controlsLocked}
+          className={`grid min-w-0 gap-6 border-0 p-0 xl:grid-cols-2 ${
+            controlsLocked ? "opacity-40" : ""
+          }`}
+        >
           <section className="space-y-3">
             <h3 className="font-mono text-[11px] font-semibold tracking-[0.06em] text-muted-foreground">
               Skin tone
@@ -447,7 +503,7 @@ export const AgentAvatarEditorPanel = forwardRef<
               ))}
             </div>
           </section>
-        </div>
+        </fieldset>
 
       </div>
     </div>

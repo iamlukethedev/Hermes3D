@@ -2,13 +2,17 @@
 
 import { Environment, OrbitControls } from "@react-three/drei";
 import { Canvas, useFrame } from "@react-three/fiber";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import {
   type AgentAvatarProfile,
   createDefaultAgentAvatarProfile,
 } from "@/lib/avatars/profile";
 import { RunningAvatarLoader } from "@/features/agents/components/RunningAvatarLoader";
+import {
+  AgentGlbBody,
+  type ManagedAgentModelSpec,
+} from "@/features/retro-office/objects/agentGlb";
 
 const PreviewFigure = ({
   profile,
@@ -295,11 +299,58 @@ const PreviewFigure = ({
   );
 };
 
+/**
+ * Reports the first rendered frame. Mounted as a sibling *inside* the Suspense
+ * boundary so it cannot fire until the GLB has actually loaded — otherwise the
+ * loader would clear against an empty canvas while a 25 MB model downloads.
+ */
+const FirstFrameReporter = ({ onFirstFrame }: { onFirstFrame: () => void }) => {
+  const reportedRef = useRef(false);
+  useFrame(() => {
+    if (reportedRef.current) return;
+    reportedRef.current = true;
+    onFirstFrame();
+  });
+  return null;
+};
+
+/** Managed-fleet GLB body, framed like the procedural figure it replaces. */
+const PreviewModelFigure = ({
+  seed,
+  spec,
+  onFirstFrame,
+}: {
+  seed: string;
+  spec: ManagedAgentModelSpec;
+  onFirstFrame: () => void;
+}) => {
+  const groupRef = useRef<THREE.Group>(null);
+
+  useFrame((state) => {
+    if (!groupRef.current) return;
+    groupRef.current.rotation.y = Math.sin(state.clock.elapsedTime * 0.45) * 0.35 + 0.25;
+  });
+
+  return (
+    <group ref={groupRef} position={[0, -0.72, 0]} scale={[1.45, 1.45, 1.45]}>
+      <Suspense fallback={null}>
+        <AgentGlbBody seed={seed} spec={spec} />
+        <FirstFrameReporter onFirstFrame={onFirstFrame} />
+      </Suspense>
+    </group>
+  );
+};
+
 export const AgentAvatarPreview3D = ({
   profile,
+  modelSpec = null,
+  seed = "preview",
   className = "",
 }: {
   profile: AgentAvatarProfile | null | undefined;
+  /** When set, the office body is this fleet GLB and the profile drives only the 2D portrait. */
+  modelSpec?: ManagedAgentModelSpec | null;
+  seed?: string;
   className?: string;
 }) => {
   const resolvedProfile = useMemo(
@@ -307,8 +358,11 @@ export const AgentAvatarPreview3D = ({
     [profile]
   );
   const profileKey = useMemo(() => JSON.stringify(resolvedProfile), [resolvedProfile]);
-  const [readyProfileKey, setReadyProfileKey] = useState<string | null>(null);
-  const isReady = readyProfileKey === profileKey;
+  // The GLB ignores the profile, so keying the loader on it would re-show the
+  // spinner on every unrelated colour tweak.
+  const previewKey = modelSpec ? `model:${modelSpec.url}` : profileKey;
+  const [readyPreviewKey, setReadyPreviewKey] = useState<string | null>(null);
+  const isReady = readyPreviewKey === previewKey;
 
   return (
     <div className={`relative ${className}`}>
@@ -322,12 +376,22 @@ export const AgentAvatarPreview3D = ({
         <ambientLight intensity={1.4} />
         <directionalLight position={[3, 4, 5]} intensity={2.4} />
         <directionalLight position={[-4, 2, 3]} intensity={0.9} color="#89a6ff" />
-        <PreviewFigure
-          profile={resolvedProfile}
-          onFirstFrame={() => {
-            setReadyProfileKey(profileKey);
-          }}
-        />
+        {modelSpec ? (
+          <PreviewModelFigure
+            seed={seed}
+            spec={modelSpec}
+            onFirstFrame={() => {
+              setReadyPreviewKey(previewKey);
+            }}
+          />
+        ) : (
+          <PreviewFigure
+            profile={resolvedProfile}
+            onFirstFrame={() => {
+              setReadyPreviewKey(previewKey);
+            }}
+          />
+        )}
         <Environment preset="city" />
         <OrbitControls enablePan={false} enableZoom={false} maxPolarAngle={1.8} minPolarAngle={1.1} />
       </Canvas>
