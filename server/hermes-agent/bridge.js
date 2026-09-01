@@ -131,8 +131,17 @@ const {
   toManagedFleetIntakeBody,
   toManagedFleetPatchBody,
   toKanbanPatchBody,
+  hermesRequest,
   kanbanRequest,
 } = require("./kanban");
+const {
+  redactActivityText,
+  extractSessionId,
+  buildSessionActivityEntries,
+  buildKanbanActivityEntries,
+  mergeActivityEntries,
+  buildActivityRevision,
+} = require("./activity");
 
 const managedFleetMode = Boolean(
   String(process.env.HERMES3D_FLEET_ROOT ?? "").trim(),
@@ -1382,18 +1391,66 @@ function createHermesAgentUpstream(options) {
           ? Math.max(1_000, Math.min(200_000, Math.round(requestedTail)))
           : 24_000;
         try {
-          const result = await kanbanRequest({
+          const requestBase = {
             wsUrl: url,
             token,
             useLoopbackHost: client.usedLoopbackHost,
             method: "GET",
-            path: `/tasks/${encodeURIComponent(taskId)}/log?tail=${tail}`,
-          });
+          };
+          const [result, detail] = await Promise.all([
+            kanbanRequest({
+              ...requestBase,
+              path: `/tasks/${encodeURIComponent(taskId)}/log?tail=${tail}`,
+            }),
+            kanbanRequest({
+              ...requestBase,
+              path: `/tasks/${encodeURIComponent(taskId)}`,
+            }),
+          ]);
+          const task = detail?.task && typeof detail.task === "object" ? detail.task : {};
+          const events = Array.isArray(detail?.events) ? detail.events : [];
+          const logContent = asString(result?.content);
+          const sessionId = extractSessionId(task, logContent);
+          const profile = asString(task.assignee);
+          let messages = [];
+          let transcriptWarning = null;
+
+          if (sessionId) {
+            try {
+              const query = new URLSearchParams({ limit: "200", order: "latest" });
+              if (profile) query.set("profile", profile);
+              const transcript = await hermesRequest({
+                ...requestBase,
+                path: `/api/sessions/${encodeURIComponent(sessionId)}/messages?${query.toString()}`,
+              });
+              messages = Array.isArray(transcript?.messages) ? transcript.messages : [];
+            } catch (err) {
+              transcriptWarning = "Session transcript is temporarily unavailable; showing task activity only.";
+              log(
+                `[hermes-agent] transcript read for task ${taskId} failed: ${errorMessage(err)}`,
+              );
+            }
+          }
+
+          const entries = mergeActivityEntries(
+            buildKanbanActivityEntries(events),
+            buildSessionActivityEntries(messages),
+            transcriptWarning
+              ? [{ kind: "error", text: transcriptWarning, timestampMs: Date.now() }]
+              : [],
+          );
           return resOk(id, {
             taskId: rawId,
             exists: result?.exists !== false,
             sizeBytes: Number(result?.size_bytes) || 0,
-            content: asString(result?.content),
+            content: redactActivityText(logContent),
+            sessionId,
+            entries,
+            revision: buildActivityRevision({
+              logSize: result?.size_bytes,
+              events,
+              messages,
+            }),
           });
         } catch (err) {
           return resErr(id, "hermes_agent.tasks_activity_failed", errorMessage(err));

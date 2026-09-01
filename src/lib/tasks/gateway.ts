@@ -61,6 +61,13 @@ export type GatewayTaskActivityResult = {
   exists: boolean;
   sizeBytes: number;
   content: string;
+  sessionId?: string | null;
+  revision?: string;
+  entries?: Array<{
+    kind: "assistant" | "tool" | "progress" | "error";
+    text: string;
+    timestampMs?: number | null;
+  }>;
 };
 
 export type GatewayTaskComment = {

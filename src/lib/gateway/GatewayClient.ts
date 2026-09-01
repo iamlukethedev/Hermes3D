@@ -132,6 +132,7 @@ export const resolveInitialGatewayAutoConnectDelayMs = (
 ): number => {
   switch (adapterType) {
     case "hermes":
+    case "hermes-agent":
     case "demo":
       return INITIAL_AUTO_CONNECT_DELAY_MS;
     default:
@@ -145,6 +146,7 @@ export const resolveInitialGatewayConnectAttemptCount = (
 ): number => {
   switch (adapterType) {
     case "hermes":
+    case "hermes-agent":
     case "demo":
       return 2;
     default:
@@ -857,6 +859,7 @@ export const useGatewayConnection = (
       if (autoConnectTimerRef.current) {
         clearTimeout(autoConnectTimerRef.current);
         autoConnectTimerRef.current = null;
+        didAutoConnect.current = false;
       }
       if (retryTimerRef.current) {
         clearTimeout(retryTimerRef.current);

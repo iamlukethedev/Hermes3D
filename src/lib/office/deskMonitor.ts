@@ -13,9 +13,10 @@ export type OfficeDeskMonitorMode =
   | "error";
 
 export type OfficeDeskMonitorEntry = {
-  kind: "user" | "assistant" | "thinking" | "tool";
+  kind: "user" | "assistant" | "thinking" | "tool" | "error";
   text: string;
   live?: boolean;
+  timestampMs?: number | null;
 };
 
 export type OfficeDeskMonitor = {
@@ -28,6 +29,7 @@ export type OfficeDeskMonitor = {
   updatedAt: number | null;
   live: boolean;
   entries: OfficeDeskMonitorEntry[];
+  terminalLines: string[];
   task: {
     id: string;
     title: string;
@@ -50,6 +52,11 @@ export type OfficeDeskMonitorKanbanActivity = {
   taskStatus?: string;
   runId?: string | null;
   logContent: string;
+  entries?: Array<{
+    kind: "assistant" | "tool" | "progress" | "error";
+    text: string;
+    timestampMs?: number | null;
+  }>;
   updatedAt: number | null;
 };
 
@@ -77,6 +84,22 @@ const buildKanbanActivityEntries = (
 ): OfficeDeskMonitorEntry[] => {
   const isLive =
     !activity.taskStatus?.trim() || activity.taskStatus.trim() === "working";
+  const structuredEntries = (activity.entries ?? [])
+    .filter((entry) => Boolean(entry?.text?.trim()))
+    .map<OfficeDeskMonitorEntry>((entry) => ({
+      kind: entry.kind === "progress" ? "thinking" : entry.kind,
+      text: entry.text.trim(),
+      live: false,
+      timestampMs: entry.timestampMs ?? null,
+    }));
+  if (structuredEntries.length > 0) {
+    const limited = structuredEntries.slice(-KANBAN_ACTIVITY_ENTRY_LIMIT);
+    if (isLive && limited.length > 0) {
+      limited[limited.length - 1] = { ...limited[limited.length - 1], live: true };
+    }
+    return limited;
+  }
+
   const entries = activity.logContent
     .replace(TERMINAL_ESCAPE_RE, "")
     .replace(/\r/g, "")
@@ -121,6 +144,17 @@ const buildKanbanActivityEntries = (
     },
   ];
 };
+
+const buildKanbanTerminalLines = (
+  activity: OfficeDeskMonitorKanbanActivity,
+): string[] =>
+  activity.logContent
+    .replace(TERMINAL_ESCAPE_RE, "")
+    .replace(/\r/g, "")
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .filter(Boolean)
+    .slice(-MONITOR_HISTORY_LINE_LIMIT);
 
 const extractUrls = (value: string): string[] => {
   const matches = value.match(URL_RE);
@@ -417,6 +451,7 @@ export const buildOfficeDeskMonitor = (
       Boolean(effectiveAgent.thinkingTrace) ||
       latestEntries.some((entry) => entry.live),
     entries: visibleEntries,
+    terminalLines: kanbanActivity ? buildKanbanTerminalLines(kanbanActivity) : [],
     task: kanbanActivity
       ? {
           id: kanbanActivity.taskId,

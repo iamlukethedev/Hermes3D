@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { AgentState } from "@/features/agents/state/store";
 import type { RunRecord } from "@/features/office/hooks/useRunLog";
 import {
+  deduplicateTaskCards,
   deriveFallbackChatCard,
   deriveRecoveredAgentRequestCard,
   deriveLiveSessionTaskCard,
@@ -86,6 +87,46 @@ describe("task board controller helpers", () => {
         makeCard("kanban:t_new", "working"),
       ]),
     ).toEqual([]);
+  });
+
+  it("deduplicates multiple cards sharing the same normalized title, assignee, and status", () => {
+    const makeCard = (id: string, title: string, updatedAt: string) => ({
+      id,
+      title,
+      description: "",
+      status: "needs_attention" as const,
+      source: "hermes_event" as const,
+      sourceEventId: null,
+      assignedAgentId: "agent-1",
+      createdAt: "2026-08-25T10:00:00.000Z",
+      updatedAt,
+      playbookJobId: null,
+      runId: null,
+      channel: "kanban",
+      externalThreadId: null,
+      lastActivityAt: null,
+      notes: [],
+      isArchived: false,
+      isInferred: false,
+      model: null,
+      skills: [] as string[],
+      subagentCount: 0,
+      scheduledFor: null,
+      learnedSkill: false,
+    });
+
+    const cards = [
+      makeCard("t_1", "fix(connect): stop inviting members who paused Connect themselves", "2026-08-25T10:00:00.000Z"),
+      makeCard("t_2", "fix(connect): stop inviting members who paused Connect themselves", "2026-08-25T11:00:00.000Z"),
+      makeCard("t_3", "fix(connect): stop inviting members who paused Connect themselves", "2026-08-25T09:00:00.000Z"),
+      makeCard("t_other", "Another unique task", "2026-08-25T10:00:00.000Z"),
+    ];
+
+    const deduplicated = deduplicateTaskCards(cards);
+    expect(deduplicated).toHaveLength(2);
+    const retainedDuplicate = deduplicated.find((c) => c.title.includes("stop inviting"));
+    expect(retainedDuplicate?.id).toBe("t_2");
+    expect(retainedDuplicate?.updatedAt).toBe("2026-08-25T11:00:00.000Z");
   });
 
   it("parses explicit Hermes task events", () => {

@@ -269,7 +269,7 @@ const REQUEST_TIMEOUT_MS = 10_000;
  * topology sometimes requires overriding the Host header to a loopback name —
  * the same fallback the WebSocket client negotiates — and fetch forbids that.
  */
-const kanbanRequest = ({ wsUrl, token, useLoopbackHost, method, path, body }) =>
+const hermesRequest = ({ wsUrl, token, useLoopbackHost, method, path, body }) =>
   new Promise((resolve, reject) => {
     let origin;
     try {
@@ -286,7 +286,7 @@ const kanbanRequest = ({ wsUrl, token, useLoopbackHost, method, path, body }) =>
         hostname: origin.hostname,
         port: origin.port || undefined,
         method,
-        path: `/api/plugins/kanban${path}`,
+        path,
         headers: {
           Accept: "application/json",
           "X-Hermes-Session-Token": String(token ?? ""),
@@ -331,6 +331,16 @@ const kanbanRequest = ({ wsUrl, token, useLoopbackHost, method, path, body }) =>
     request.end();
   });
 
+const kanbanRequest = ({ wsUrl, token, useLoopbackHost, method, path, body }) =>
+  hermesRequest({
+    wsUrl,
+    token,
+    useLoopbackHost,
+    method,
+    path: `/api/plugins/kanban${path}`,
+    body,
+  });
+
 module.exports = {
   KANBAN_TASK_ID_PREFIX,
   toHermes3dKanbanTaskRecord,
@@ -341,5 +351,6 @@ module.exports = {
   toManagedFleetPatchBody,
   toKanbanPatchBody,
   kanbanOriginFromWsUrl,
+  hermesRequest,
   kanbanRequest,
 };

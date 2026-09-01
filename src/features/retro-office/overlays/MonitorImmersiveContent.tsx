@@ -30,6 +30,7 @@ const getAgentInitials = (name: string): string => {
 const getEntryLabel = (kind: OfficeDeskMonitorEntry["kind"]): string => {
   if (kind === "thinking") return "Progress";
   if (kind === "tool") return "Command / tool";
+  if (kind === "error") return "Blocked / error";
   if (kind === "user") return "Objective";
   return "Worker output";
 };
@@ -37,8 +38,18 @@ const getEntryLabel = (kind: OfficeDeskMonitorEntry["kind"]): string => {
 const formatTerminalEntry = (entry: OfficeDeskMonitorEntry): string => {
   if (entry.kind === "tool") return `$ ${entry.text}`;
   if (entry.kind === "thinking") return `# ${entry.text}`;
+  if (entry.kind === "error") return `! ${entry.text}`;
   if (entry.kind === "user") return `> ${entry.text}`;
   return entry.text;
+};
+
+const formatEntryTime = (timestampMs?: number | null): string | null => {
+  if (!timestampMs || !Number.isFinite(timestampMs)) return null;
+  return new Date(timestampMs).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
 };
 
 function MonitorAgentRail({
@@ -206,6 +217,8 @@ function KanbanTaskMonitor({
                         className={`grid grid-cols-[135px_minmax(0,1fr)] gap-4 rounded-xl border px-4 py-3 ${
                           entry.kind === "tool"
                             ? "border-sky-400/12 bg-sky-400/[0.045]"
+                            : entry.kind === "error"
+                              ? "border-rose-400/18 bg-rose-400/[0.06]"
                             : entry.kind === "thinking"
                               ? "border-fuchsia-400/12 bg-fuchsia-400/[0.045]"
                               : entry.kind === "user"
@@ -217,6 +230,11 @@ function KanbanTaskMonitor({
                           {getEntryLabel(entry.kind)}
                           {entry.live ? (
                             <div className="mt-1 text-emerald-300/55">Live</div>
+                          ) : null}
+                          {formatEntryTime(entry.timestampMs) ? (
+                            <div className="mt-1 text-white/25">
+                              {formatEntryTime(entry.timestampMs)}
+                            </div>
                           ) : null}
                         </div>
                         <div className="whitespace-pre-wrap break-words font-mono text-[13px] leading-6 text-white/78">
@@ -233,10 +251,19 @@ function KanbanTaskMonitor({
               </div>
             ) : (
               <div className="min-h-0 flex-1 overflow-auto bg-[#090d10] px-7 py-6 font-mono text-[14px] leading-7 text-[#9cdcfe]">
-                {monitor.entries.length > 0 ? (
-                  monitor.entries.map((entry, index) => (
+                {monitor.terminalLines.length > 0 ? (
+                  monitor.terminalLines.map((line, index) => (
                     <div
                       key={`${monitor.agentId}-${task.id}-terminal-${index}`}
+                      className="whitespace-pre-wrap break-words border-b border-white/[0.035] py-1.5"
+                    >
+                      {line}
+                    </div>
+                  ))
+                ) : monitor.entries.length > 0 ? (
+                  monitor.entries.map((entry, index) => (
+                    <div
+                      key={`${monitor.agentId}-${task.id}-terminal-fallback-${index}`}
                       className="whitespace-pre-wrap break-words border-b border-white/[0.035] py-1.5"
                     >
                       {formatTerminalEntry(entry)}

@@ -141,6 +141,46 @@ describe("buildOfficeDeskMonitor", () => {
     );
   });
 
+  it("uses the redacted structured run transcript and keeps terminal output separate", () => {
+    const monitor = buildOfficeDeskMonitor(createAgent(), {
+      taskId: "kanban:t_live",
+      taskTitle: "Inspect the fleet",
+      taskStatus: "working",
+      runId: "170",
+      logContent: "session_id: stored-1\nraw terminal line",
+      entries: [
+        {
+          kind: "progress",
+          text: "Worker claimed the task (run 170).",
+          timestampMs: 1_000,
+        },
+        {
+          kind: "tool",
+          text: "kanban_show: t_1",
+          timestampMs: 2_000,
+        },
+      ],
+      updatedAt: 5_000,
+    });
+
+    expect(monitor.entries).toEqual([
+      expect.objectContaining({
+        kind: "thinking",
+        text: "Worker claimed the task (run 170).",
+        live: false,
+      }),
+      expect.objectContaining({
+        kind: "tool",
+        text: "kanban_show: t_1",
+        live: true,
+      }),
+    ]);
+    expect(monitor.terminalLines).toEqual([
+      "session_id: stored-1",
+      "raw terminal line",
+    ]);
+  });
+
   it("detects browser activity and extracts the current url", () => {
     const monitor = buildOfficeDeskMonitor(
       createAgent({

@@ -4414,7 +4414,7 @@ export function OfficeScreen({
           ? (kanbanActivityByTaskId[kanbanTask.id] ?? null)
           : null;
         const activityKey = kanbanTask
-          ? `${kanbanTask.id}:${kanbanTask.title}:${activity?.sizeBytes ?? 0}:${activity?.content.slice(-160) ?? ""}`
+          ? `${kanbanTask.id}:${kanbanTask.title}:${activity?.revision ?? `${activity?.sizeBytes ?? 0}:${activity?.content.slice(-160) ?? ""}`}`
           : null;
         const cached = deskMonitorCacheRef.current.get(agent.agentId);
         if (
@@ -4439,6 +4439,7 @@ export function OfficeScreen({
                 taskStatus: kanbanTask.status,
                 runId: kanbanTask.runId,
                 logContent: activity?.content ?? "",
+                entries: activity?.entries ?? [],
                 updatedAt: Number.isFinite(activityAt) ? activityAt : null,
               }
             : null,

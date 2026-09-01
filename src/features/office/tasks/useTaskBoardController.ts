@@ -591,6 +591,53 @@ export const findDuplicateMirroredTaskCardIds = (
   return duplicateIds;
 };
 
+/**
+ * Deduplicate cards for presentation on the task board.
+ * When multiple cards share the exact same normalized title, assignee, and status column,
+ * only the most recently updated / detailed card is shown.
+ */
+export const deduplicateTaskCards = (
+  cards: TaskBoardCard[],
+): TaskBoardCard[] => {
+  const grouped = new Map<string, TaskBoardCard[]>();
+  const passThrough: TaskBoardCard[] = [];
+
+  for (const card of cards) {
+    if (card.isArchived) continue;
+    const titleKey = normalizeTaskRequestText(card.title).toLowerCase().trim();
+    if (!titleKey) {
+      passThrough.push(card);
+      continue;
+    }
+    const groupKey = `${card.assignedAgentId ?? "-"}:${card.status}:${titleKey}`;
+    const matches = grouped.get(groupKey);
+    if (matches) {
+      matches.push(card);
+    } else {
+      grouped.set(groupKey, [card]);
+    }
+  }
+
+  const result: TaskBoardCard[] = [...passThrough];
+  for (const matches of grouped.values()) {
+    if (matches.length === 1) {
+      result.push(matches[0]);
+    } else {
+      const sorted = [...matches].sort((a, b) => {
+        const timeA = Date.parse(a.updatedAt || a.createdAt || "0") || 0;
+        const timeB = Date.parse(b.updatedAt || b.createdAt || "0") || 0;
+        if (timeB !== timeA) return timeB - timeA;
+        if ((b.notes?.length ?? 0) !== (a.notes?.length ?? 0)) {
+          return (b.notes?.length ?? 0) - (a.notes?.length ?? 0);
+        }
+        return b.id.localeCompare(a.id);
+      });
+      result.push(sorted[0]);
+    }
+  }
+  return result;
+};
+
 const buildPlaybookCards = (
   jobs: CronJobSummary[],
   existingCards: TaskBoardCard[],
@@ -1639,6 +1686,7 @@ export const useTaskBoardController = ({
     : null;
 
   const cardsByStatus = useMemo(() => {
+    const deduplicated = deduplicateTaskCards(state.cards);
     const grouped = {
       inbox: [] as TaskBoardCard[],
       scheduled: [] as TaskBoardCard[],
@@ -1646,7 +1694,7 @@ export const useTaskBoardController = ({
       needs_attention: [] as TaskBoardCard[],
       done: [] as TaskBoardCard[],
     };
-    for (const card of state.cards) {
+    for (const card of deduplicated) {
       if (card.isArchived) continue;
       grouped[card.status].push(card);
     }
