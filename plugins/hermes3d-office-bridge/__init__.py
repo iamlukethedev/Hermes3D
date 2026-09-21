@@ -33,7 +33,7 @@ _log = logging.getLogger(__name__)
 FRAME_VERSION = 1
 
 DEFAULT_HOST = "127.0.0.1"
-DEFAULT_PORT = 9119
+DEFAULT_PORT = 9120
 DEFAULT_CHANNEL = "hermes3d"
 
 # The office shows a short preview, not a transcript. Truncating keeps a long

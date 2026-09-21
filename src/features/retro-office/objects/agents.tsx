@@ -1,6 +1,6 @@
 import { Billboard, Text } from "@react-three/drei";
 import { useFrame } from "@react-three/fiber";
-import { memo, useMemo, useRef } from "react";
+import { memo, Suspense, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { createDefaultAgentAvatarProfile } from "@/lib/avatars/profile";
 import {
@@ -12,6 +12,10 @@ import type {
   JanitorActor,
   RenderAgent,
 } from "@/features/retro-office/core/types";
+import {
+  AgentGlbBody,
+  useManagedAgentModelSpec,
+} from "@/features/retro-office/objects/agentGlb";
 import { AgentModelProps } from "@/features/retro-office/objects/types";
 
 const MAX_NAMEPLATE_TEXT_LENGTH = 10;
@@ -122,6 +126,9 @@ export const AgentModel = memo(function AgentModel({
     () => appearance ?? createDefaultAgentAvatarProfile(agentId),
     [agentId, appearance],
   );
+  // A managed fleet may supply a private GLB through the authenticated fleet
+  // asset API. Everything else keeps the procedural body.
+  const managedModel = useManagedAgentModelSpec(agentId);
 
   useFrame(() => {
     const agent =
@@ -362,7 +369,7 @@ export const AgentModel = memo(function AgentModel({
 
     if (statusDotMatRef.current) {
       statusDotMatRef.current.color.set(
-        isError ? "#ef4444" : working ? "#22c55e" : "#f59e0b",
+        isError ? "#ef4444" : working ? "#f59e0b" : "#22c55e",
       );
     }
 
@@ -746,6 +753,14 @@ export const AgentModel = memo(function AgentModel({
         <circleGeometry args={[0.12, 12]} />
         <meshBasicMaterial color="#000" transparent opacity={0.2} />
       </mesh>
+      {managedModel ? (
+        <Suspense fallback={null}>
+          <AgentGlbBody seed={agentId} spec={managedModel} />
+        </Suspense>
+      ) : null}
+      {/* Procedural body. Kept mounted so the limb refs the animation loop
+          writes to stay alive; a custom model simply hides it. */}
+      <group visible={!managedModel}>
       <group ref={rightLegRef} position={[-0.045, 0.1, 0]}>
         {bottomStyle === "shorts" ? (
           <>
@@ -1151,6 +1166,7 @@ export const AgentModel = memo(function AgentModel({
         <boxGeometry args={[0.014, 0.014, 0.01]} />
         <meshBasicMaterial color="#9c4a4a" />
       </mesh>
+      </group>
       <mesh
         ref={pulseRingRef}
         position={[0, 0.005, 0]}

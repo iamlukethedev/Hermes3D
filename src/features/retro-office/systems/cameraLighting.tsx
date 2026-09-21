@@ -96,10 +96,27 @@ export function CameraAnimator({
   presetRef: MutableRefObject<CameraPreset | null>;
   orbitRef: RefObject<OrbitControllerLike | null>;
 }) {
-  const { camera, size } = useThree();
+  const { camera, size, gl } = useThree();
   const targetPositionRef = useRef(new THREE.Vector3());
   const targetLookAtRef = useRef(new THREE.Vector3());
   const directionRef = useRef(new THREE.Vector3());
+
+  useEffect(() => {
+    const dom = gl.domElement;
+    const cancelPreset = () => {
+      if (presetRef.current) {
+        presetRef.current = null;
+      }
+    };
+    dom.addEventListener("pointerdown", cancelPreset, { passive: true });
+    dom.addEventListener("wheel", cancelPreset, { passive: true });
+    dom.addEventListener("touchstart", cancelPreset, { passive: true });
+    return () => {
+      dom.removeEventListener("pointerdown", cancelPreset);
+      dom.removeEventListener("wheel", cancelPreset);
+      dom.removeEventListener("touchstart", cancelPreset);
+    };
+  }, [gl, presetRef]);
 
   useFrame(() => {
     const preset = presetRef.current;

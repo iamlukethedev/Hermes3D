@@ -176,6 +176,25 @@ export const loadStudioSettings = (): StudioSettings => {
   const raw = fs.readFileSync(settingsPath, "utf8");
   const parsed = JSON.parse(raw) as unknown;
   const settings = normalizeStudioSettings(parsed);
+  const envDefaults = buildEnvGatewayDefaults();
+  if (envDefaults) {
+    return {
+      ...settings,
+      gateway: {
+        ...(settings.gateway ?? {}),
+        url: envDefaults.url,
+        token: envDefaults.token || (settings.gateway?.token ?? ""),
+        adapterType: envDefaults.adapterType,
+        profiles: {
+          ...(settings.gateway?.profiles ?? {}),
+          [envDefaults.adapterType]: {
+            url: envDefaults.url,
+            token: envDefaults.token,
+          },
+        },
+      },
+    };
+  }
   if (!settings.gateway?.token) {
     const gateway = loadLocalGatewayDefaults();
     if (gateway) {

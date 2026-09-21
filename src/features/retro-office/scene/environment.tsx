@@ -1,6 +1,7 @@
 "use client";
 
-import { memo, useMemo, type ReactNode } from "react";
+import { memo, useMemo, useState, useEffect, type ReactNode } from "react";
+import { Billboard, Text } from "@react-three/drei";
 import {
   CANVAS_H,
   CANVAS_W,
@@ -141,36 +142,353 @@ function BrazilFlagArt() {
   );
 }
 
-function OfficeFlagPole({
+export function LuxembourgFlagArt() {
+  const flagWidth = 0.52;
+  const flagHeight = 0.3;
+  const stripeHeight = flagHeight / 3;
+
+  return (
+    <>
+      {/* Top: Luxembourg Red */}
+      <mesh position={[0, stripeHeight, 0]}>
+        <planeGeometry args={[flagWidth, stripeHeight]} />
+        <meshBasicMaterial color="#EA141D" side={2} />
+      </mesh>
+      {/* Middle: White */}
+      <mesh position={[0, 0, 0]}>
+        <planeGeometry args={[flagWidth, stripeHeight]} />
+        <meshBasicMaterial color="#FFFFFF" side={2} />
+      </mesh>
+      {/* Bottom: Luxembourg Light Sky Blue */}
+      <mesh position={[0, -stripeHeight, 0]}>
+        <planeGeometry args={[flagWidth, stripeHeight]} />
+        <meshBasicMaterial color="#00A1DE" side={2} />
+      </mesh>
+    </>
+  );
+}
+
+export function EuropeanFlagArt() {
+  const flagWidth = 0.52;
+  const flagHeight = 0.3;
+  const starRadius = 0.078;
+
+  return (
+    <>
+      {/* EU Reflex Blue Field */}
+      <mesh position={[0, 0, 0]}>
+        <planeGeometry args={[flagWidth, flagHeight]} />
+        <meshBasicMaterial color="#003399" side={2} />
+      </mesh>
+      {/* 12 Gold Stars in circle */}
+      {Array.from({ length: 12 }).map((_, i) => {
+        const angle = (i * Math.PI * 2) / 12 - Math.PI / 2;
+        const x = Math.cos(angle) * starRadius;
+        const y = Math.sin(angle) * starRadius;
+        return (
+          <group key={`eu-star-${i}`} position={[x, y, 0.001]}>
+            {/* Center + Points forming gold star */}
+            <mesh>
+              <circleGeometry args={[0.009, 5]} />
+              <meshBasicMaterial color="#FFCC00" side={2} />
+            </mesh>
+            <mesh rotation={[0, 0, Math.PI / 5]}>
+              <circleGeometry args={[0.009, 5]} />
+              <meshBasicMaterial color="#FFCC00" side={2} />
+            </mesh>
+          </group>
+        );
+      })}
+    </>
+  );
+}
+
+export function CrushFlagArt() {
+  const flagWidth = 0.52;
+  const flagHeight = 0.3;
+
+  return (
+    <>
+      {/* Luxurious Rose/Ruby Outer Field */}
+      <mesh position={[0, 0, 0]}>
+        <planeGeometry args={[flagWidth, flagHeight]} />
+        <meshBasicMaterial color="#9f1239" side={2} />
+      </mesh>
+      {/* Crimson Gradient Center */}
+      <mesh position={[0, 0, 0.0005]}>
+        <planeGeometry args={[flagWidth - 0.024, flagHeight - 0.024]} />
+        <meshBasicMaterial color="#e11d48" side={2} />
+      </mesh>
+      {/* Stylized Heart Emblem */}
+      <group position={[0, 0.038, 0.001]} scale={[1.15, 1.15, 1.15]}>
+        {/* Outer White Halo */}
+        <mesh position={[0, 0, 0]} rotation={[0, 0, Math.PI / 4]}>
+          <planeGeometry args={[0.065, 0.065]} />
+          <meshBasicMaterial color="#ffffff" side={2} />
+        </mesh>
+        <mesh position={[-0.023, 0.023, 0]}>
+          <circleGeometry args={[0.0325, 24]} />
+          <meshBasicMaterial color="#ffffff" side={2} />
+        </mesh>
+        <mesh position={[0.023, 0.023, 0]}>
+          <circleGeometry args={[0.0325, 24]} />
+          <meshBasicMaterial color="#ffffff" side={2} />
+        </mesh>
+        
+        {/* Inner Coral/Hot Pink Heart */}
+        <mesh position={[0, 0, 0.0005]} rotation={[0, 0, Math.PI / 4]}>
+          <planeGeometry args={[0.052, 0.052]} />
+          <meshBasicMaterial color="#ff2d55" side={2} />
+        </mesh>
+        <mesh position={[-0.018, 0.018, 0.0005]}>
+          <circleGeometry args={[0.026, 24]} />
+          <meshBasicMaterial color="#ff2d55" side={2} />
+        </mesh>
+        <mesh position={[0.018, 0.018, 0.0005]}>
+          <circleGeometry args={[0.026, 24]} />
+          <meshBasicMaterial color="#ff2d55" side={2} />
+        </mesh>
+      </group>
+
+      {/* Crisp White Branding Text */}
+      <Text
+        position={[0, -0.062, 0.002]}
+        fontSize={0.036}
+        color="#ffffff"
+        anchorX="center"
+        anchorY="middle"
+        letterSpacing={0.12}
+      >
+        CRUSH.LU
+      </Text>
+    </>
+  );
+}
+
+export function PirateFlagArt() {
+  const flagWidth = 0.52;
+  const flagHeight = 0.3;
+
+  return (
+    <>
+      {/* Black flag cloth */}
+      <mesh position={[0, 0, 0]}>
+        <planeGeometry args={[flagWidth, flagHeight]} />
+        <meshBasicMaterial color="#111111" side={2} />
+      </mesh>
+
+      {/* Crossbones behind skull */}
+      <group position={[0, -0.012, 0.001]}>
+        {/* Bone 1 (diagonal /) */}
+        <mesh rotation={[0, 0, Math.PI / 4]}>
+          <planeGeometry args={[0.26, 0.022]} />
+          <meshBasicMaterial color="#ececec" side={2} />
+        </mesh>
+        {/* Bone 2 (diagonal \) */}
+        <mesh rotation={[0, 0, -Math.PI / 4]}>
+          <planeGeometry args={[0.26, 0.022]} />
+          <meshBasicMaterial color="#ececec" side={2} />
+        </mesh>
+        {/* 4 Bone end joints */}
+        {[
+          [-0.092, 0.092],
+          [0.092, 0.092],
+          [-0.092, -0.092],
+          [0.092, -0.092],
+        ].map(([bx, by], idx) => (
+          <group key={`bone-joint-${idx}`} position={[bx, by, 0]}>
+            <mesh position={[-0.007, 0, 0]}>
+              <circleGeometry args={[0.014, 16]} />
+              <meshBasicMaterial color="#ececec" side={2} />
+            </mesh>
+            <mesh position={[0.007, 0, 0]}>
+              <circleGeometry args={[0.014, 16]} />
+              <meshBasicMaterial color="#ececec" side={2} />
+            </mesh>
+          </group>
+        ))}
+      </group>
+
+      {/* Skull Head */}
+      <group position={[0, 0.018, 0.002]}>
+        {/* Cranium */}
+        <mesh position={[0, 0.026, 0]}>
+          <circleGeometry args={[0.052, 28]} />
+          <meshBasicMaterial color="#f8f8f8" side={2} />
+        </mesh>
+        {/* Jaw */}
+        <mesh position={[0, -0.02, 0]}>
+          <planeGeometry args={[0.046, 0.038]} />
+          <meshBasicMaterial color="#f8f8f8" side={2} />
+        </mesh>
+
+        {/* Eye sockets (Black) */}
+        <mesh position={[-0.02, 0.02, 0.001]}>
+          <circleGeometry args={[0.013, 16]} />
+          <meshBasicMaterial color="#111111" side={2} />
+        </mesh>
+        <mesh position={[0.02, 0.02, 0.001]}>
+          <circleGeometry args={[0.013, 16]} />
+          <meshBasicMaterial color="#111111" side={2} />
+        </mesh>
+
+        {/* Inverted Triangle Nose (Black) */}
+        <mesh position={[0, 0.002, 0.001]} rotation={[0, 0, Math.PI]}>
+          <circleGeometry args={[0.007, 3]} />
+          <meshBasicMaterial color="#111111" side={2} />
+        </mesh>
+
+        {/* Teeth Vertical Slits */}
+        {[-0.014, -0.005, 0.005, 0.014].map((tx, idx) => (
+          <mesh key={`tooth-${idx}`} position={[tx, -0.022, 0.001]}>
+            <planeGeometry args={[0.003, 0.018]} />
+            <meshBasicMaterial color="#111111" side={2} />
+          </mesh>
+        ))}
+      </group>
+    </>
+  );
+}
+
+export type FlagKey = "luxembourg" | "european" | "crush" | "pirate" | "usa" | "brazil";
+
+export const FLAG_DEFINITIONS: Record<FlagKey, { id: FlagKey; name: string; icon: string; component: () => React.JSX.Element }> = {
+  luxembourg: { id: "luxembourg", name: "Luxembourg", icon: "🇱🇺", component: LuxembourgFlagArt },
+  european: { id: "european", name: "European Union", icon: "🇪🇺", component: EuropeanFlagArt },
+  crush: { id: "crush", name: "Crush.lu", icon: "❤️", component: CrushFlagArt },
+  pirate: { id: "pirate", name: "Jolly Roger", icon: "☠️", component: PirateFlagArt },
+  usa: { id: "usa", name: "USA", icon: "🇺🇸", component: UsaFlagArt },
+  brazil: { id: "brazil", name: "Brazil", icon: "🇧🇷", component: BrazilFlagArt },
+};
+
+export const FLAG_CYCLE_ORDER: FlagKey[] = ["luxembourg", "european", "crush", "pirate"];
+
+export function OfficeFlagPole({
   position,
   rotY = 0,
   art,
+  defaultFlag = "luxembourg",
+  storageKey = "hermes-office-flag",
 }: {
   position: [number, number, number];
   rotY?: number;
-  art: ReactNode;
+  art?: ReactNode;
+  defaultFlag?: FlagKey;
+  storageKey?: string;
 }) {
+  const [selectedFlag, setSelectedFlag] = useState<FlagKey>(defaultFlag);
+  const [isHovered, setIsHovered] = useState(false);
+  const [bannerLabel, setBannerLabel] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const saved = localStorage.getItem(storageKey);
+      if (saved && saved in FLAG_DEFINITIONS) {
+        setSelectedFlag(saved as FlagKey);
+      }
+    } catch {}
+  }, [storageKey]);
+
+  const handleCycleFlag = (e: any) => {
+    e.stopPropagation?.();
+    const currentIndex = FLAG_CYCLE_ORDER.indexOf(selectedFlag);
+    const nextIndex = (currentIndex + 1) % FLAG_CYCLE_ORDER.length;
+    const nextFlag = FLAG_CYCLE_ORDER[nextIndex];
+    setSelectedFlag(nextFlag);
+    try {
+      localStorage.setItem(storageKey, nextFlag);
+    } catch {}
+
+    const def = FLAG_DEFINITIONS[nextFlag];
+    setBannerLabel(`${def.icon} ${def.name}`);
+    setTimeout(() => {
+      setBannerLabel(null);
+    }, 2500);
+  };
+
+  const FlagComponent = FLAG_DEFINITIONS[selectedFlag]?.component || LuxembourgFlagArt;
+  const currentDef = FLAG_DEFINITIONS[selectedFlag];
+
   return (
-    <group position={position} rotation={[0, rotY, 0]}>
+    <group
+      position={position}
+      rotation={[0, rotY, 0]}
+      onClick={handleCycleFlag}
+      onPointerOver={(e) => {
+        e.stopPropagation?.();
+        setIsHovered(true);
+        if (typeof document !== "undefined") document.body.style.cursor = "pointer";
+      }}
+      onPointerOut={(e) => {
+        e.stopPropagation?.();
+        setIsHovered(false);
+        if (typeof document !== "undefined") document.body.style.cursor = "auto";
+      }}
+    >
       <mesh position={[0, 0.08, 0]} receiveShadow>
         <cylinderGeometry args={[0.22, 0.28, 0.16, 18]} />
-        <meshStandardMaterial color="#3a3229" roughness={0.94} metalness={0.08} />
+        <meshStandardMaterial
+          color={isHovered ? "#5a4d3f" : "#3a3229"}
+          roughness={0.94}
+          metalness={0.08}
+        />
       </mesh>
       <mesh position={[0, 1.32, 0]} castShadow receiveShadow>
         <cylinderGeometry args={[0.024, 0.03, 2.48, 14]} />
-        <meshStandardMaterial color="#c4c9d1" roughness={0.32} metalness={0.88} />
+        <meshStandardMaterial
+          color={isHovered ? "#e0e6ed" : "#c4c9d1"}
+          roughness={0.32}
+          metalness={0.88}
+        />
       </mesh>
       <mesh position={[0, 2.6, 0]}>
         <sphereGeometry args={[0.06, 16, 16]} />
-        <meshStandardMaterial color="#d4af37" roughness={0.28} metalness={0.92} />
+        <meshStandardMaterial
+          color="#d4af37"
+          roughness={0.28}
+          metalness={0.92}
+          emissive={isHovered ? "#d4af37" : "#000000"}
+          emissiveIntensity={isHovered ? 0.3 : 0}
+        />
       </mesh>
       <mesh position={[0.3, 2.34, 0]}>
         <cylinderGeometry args={[0.012, 0.012, 0.62, 10]} />
         <meshStandardMaterial color="#c4c9d1" roughness={0.32} metalness={0.88} />
       </mesh>
       <group position={[0.42, 2.16, 0.02]} scale={[1.9, 1.9, 1.9]}>
-        {art}
+        {art ?? <FlagComponent />}
       </group>
+
+      {/* Interactive Tooltip / Label */}
+      {(isHovered || bannerLabel) && (
+        <Billboard position={[0, 2.85, 0]}>
+          <group>
+            <mesh position={[0, 0, -0.005]}>
+              <planeGeometry args={[0.85, 0.22]} />
+              <meshBasicMaterial color="#0f172a" transparent opacity={0.88} />
+            </mesh>
+            <Text
+              position={[0, 0.02, 0]}
+              fontSize={0.075}
+              color="#f8fafc"
+              anchorX="center"
+              anchorY="middle"
+            >
+              {bannerLabel || `${currentDef?.icon || "🚩"} ${currentDef?.name || "Flag"}`}
+            </Text>
+            <Text
+              position={[0, -0.055, 0]}
+              fontSize={0.042}
+              color="#94a3b8"
+              anchorX="center"
+              anchorY="middle"
+            >
+              (Click to cycle flags)
+            </Text>
+          </group>
+        </Billboard>
+      )}
     </group>
   );
 }
@@ -814,13 +1132,15 @@ export const WallPictures = memo(function WallPictures({
       <OfficeFlagPole
         position={localFlagPolePosition}
         rotY={0.32}
-        art={<UsaFlagArt />}
+        defaultFlag="luxembourg"
+        storageKey="hermes-office-local-flag"
       />
       {showRemoteOffice ? (
         <OfficeFlagPole
           position={remoteFlagPolePosition}
           rotY={0.32}
-          art={<BrazilFlagArt />}
+          defaultFlag="european"
+          storageKey="hermes-office-remote-flag"
         />
       ) : null}
 

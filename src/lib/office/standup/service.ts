@@ -10,6 +10,8 @@ import {
 import { validateJiraBaseUrl } from "@/lib/security/urlSafety";
 import type {
   StandupAgentSnapshot,
+  StandupBlockerDecisionGroup,
+  StandupBlockerOption,
   StandupCommitSummary,
   StandupConfig,
   StandupMeeting,
@@ -17,8 +19,10 @@ import type {
   StandupSummaryCard,
   StandupTicketSummary,
   StandupTriggerKind,
+  StandupTaskDispatchState,
 } from "@/lib/office/standup/types";
 import { resolveStateDir } from "@/lib/hermes/paths";
+import { listSharedTasks, upsertSharedTask } from "@/lib/tasks/shared-store";
 
 type JiraIssueRecord = StandupTicketSummary & {
   assigneeName: string | null;
@@ -37,6 +41,17 @@ const splitBlockers = (value: string): string[] => {
     .map((entry) => entry.trim())
     .filter(Boolean)
     .slice(0, 3);
+};
+
+export const shouldApplyKanbanTaskBlocker = (params: {
+  manualTask: string | null | undefined;
+  kanbanTask: string | null | undefined;
+  kanbanBlocker: string | null | undefined;
+}): boolean => {
+  const kanbanTask = coerceText(params.kanbanTask);
+  if (!kanbanTask || !coerceText(params.kanbanBlocker)) return false;
+  const manualTask = coerceText(params.manualTask);
+  return !manualTask || manualTask.toLocaleLowerCase() === kanbanTask.toLocaleLowerCase();
 };
 
 const buildSourceState = (
@@ -245,6 +260,8 @@ const normalizeAgentSnapshots = (agents: StandupAgentSnapshot[]): StandupAgentSn
       name: coerceText(agent.name) || coerceText(agent.agentId),
       latestPreview: coerceText(agent.latestPreview) || null,
       lastUserMessage: coerceText(agent.lastUserMessage) || null,
+      kanbanTaskTitle: coerceText(agent.kanbanTaskTitle) || null,
+      kanbanTaskBlocker: coerceText(agent.kanbanTaskBlocker) || null,
     }))
     .filter((agent) => agent.agentId);
   if (valid.length > 0) return valid;
@@ -262,6 +279,8 @@ const normalizeAgentSnapshots = (agents: StandupAgentSnapshot[]): StandupAgentSn
       (typeof entry.name === "string" ? entry.name.trim() : "") || entry.id.trim(),
     latestPreview: null,
     lastUserMessage: null,
+    kanbanTaskTitle: null,
+    kanbanTaskBlocker: null,
   }));
 };
 
@@ -301,6 +320,137 @@ const buildSpeech = (agentName: string, currentTask: string, blockers: string[])
   return `${headline.slice(0, 117).trimEnd()}...`;
 };
 
+export const synthesizeStandupBlockerDecisions = (params: {
+  agentId: string;
+  agentName: string;
+  currentTask: string;
+  blockerText: string;
+}): StandupBlockerDecisionGroup => {
+  const text = params.blockerText.toLowerCase();
+  const options: StandupBlockerOption[] = [];
+  let question = `How should we unblock ${params.agentName}?`;
+
+  if (
+    text.includes("az login") ||
+    text.includes("azure cli") ||
+    text.includes("az account") ||
+    text.includes("az: command not found") ||
+    text.includes("subscription")
+  ) {
+    question = `How should we unblock ${params.agentName} on Azure access?`;
+    options.push({
+      id: "opt-host-azure",
+      label: "Run via host Azure operator session",
+      description:
+        "Execute the command/task using the authenticated host terminal session instead of the container.",
+      isRecommended: true,
+      rationale:
+        "Worker sandbox lacks Azure credentials; the host environment is authenticated.",
+    });
+    options.push({
+      id: "opt-dry-run",
+      label: "Proceed with local dry-run / Bicep static verification",
+      description:
+        "Skip live subscription API verification and rely on audited templates.",
+      isRecommended: false,
+    });
+    options.push({
+      id: "opt-pause-login",
+      label: "Pause until manual 'az login' completes",
+      description:
+        "Keep task in triage until human operator logs into Azure CLI.",
+      isRecommended: false,
+    });
+  } else if (
+    text.includes("git repo") ||
+    text.includes("worktree") ||
+    text.includes("workspace") ||
+    text.includes("backend is not mounted")
+  ) {
+    question = `How should we resolve the workspace mount for ${params.agentName}?`;
+    options.push({
+      id: "opt-mount-host",
+      label: "Relaunch worker in host Windows worktree",
+      description:
+        "Switch task execution from the unmounted Docker sandbox to the local host worktree.",
+      isRecommended: true,
+      rationale:
+        "Docker container lacks the Git repository; host worktree is already cloned and clean.",
+    });
+    options.push({
+      id: "opt-clone-sandbox",
+      label: "Clone git repository directly in container sandbox",
+      description:
+        "Perform an ephemeral clone into /workspace to allow sandbox execution.",
+      isRecommended: false,
+    });
+    options.push({
+      id: "opt-reassign-lead",
+      label: "Reassign task to the lead agent for decomposition",
+      description: "Have the configured lead agent review and prepare standalone patches.",
+      isRecommended: false,
+    });
+  } else if (
+    text.includes("check") ||
+    text.includes("failing") ||
+    text.includes("test")
+  ) {
+    question = `How should we resolve the failing test/check blocker?`;
+    options.push({
+      id: "opt-targeted-fix",
+      label: "Run targeted test suite against recent diffs",
+      description:
+        "Focus on the specific failing test cases to patch regressions before merging.",
+      isRecommended: true,
+      rationale:
+        "Directly isolates the regression without slowing down unrelated branches.",
+    });
+    options.push({
+      id: "opt-revert-commit",
+      label: "Revert offending commit and re-trigger CI",
+      description: "Roll back the failing change to restore a green baseline.",
+      isRecommended: false,
+    });
+    options.push({
+      id: "opt-acknowledge-legacy",
+      label: "Acknowledge as known legacy issue and proceed",
+      description:
+        "Document the failure as pre-existing and unblock release.",
+      isRecommended: false,
+    });
+  } else {
+    question = `How should we unblock ${params.agentName} on ${params.currentTask}?`;
+    options.push({
+      id: "opt-unblock-safe",
+      label: "Apply recommended safe default and resume",
+      description: `Unblock ${params.agentName} to proceed with the verified next action.`,
+      isRecommended: true,
+      rationale:
+        "Clears the blocker gate and allows the worker to advance the objective safely.",
+    });
+    options.push({
+      id: "opt-reassign-lead",
+      label: "Reassign task to the lead agent for review",
+      description: "Escalate to the lead agent to re-scope requirements.",
+      isRecommended: false,
+    });
+    options.push({
+      id: "opt-defer",
+      label: "Defer task to next sprint/standup",
+      description:
+        "Park this item in backlog while waiting for external dependencies.",
+      isRecommended: false,
+    });
+  }
+
+  return {
+    blockerText: params.blockerText,
+    question,
+    options,
+    selectedDecision: null,
+  };
+};
+
 export const buildStandupMeeting = async (params: {
   config: StandupConfig;
   agents: StandupAgentSnapshot[];
@@ -323,24 +473,47 @@ export const buildStandupMeeting = async (params: {
       manual.jiraAssignee,
       jiraResult.issues
     );
+    const manualTask = coerceText(manual.currentTask);
+    const kanbanTask = coerceText(agent.kanbanTaskTitle);
     const currentTask =
-      coerceText(manual.currentTask) ||
+      manualTask ||
+      kanbanTask ||
       activeTickets[0]?.title ||
       agent.latestPreview ||
       agent.lastUserMessage ||
       githubResult.commits[0]?.title ||
       "Reviewing current work.";
     const blockers = splitBlockers(manual.blockers);
+    const kanbanBlocker = coerceText(agent.kanbanTaskBlocker);
+    if (
+      shouldApplyKanbanTaskBlocker({
+        manualTask,
+        kanbanTask,
+        kanbanBlocker,
+      }) &&
+      !blockers.includes(kanbanBlocker)
+    ) {
+      blockers.push(kanbanBlocker);
+    }
     if (blockers.length === 0 && githubResult.hasFailingChecks) {
       blockers.push("GitHub checks are failing.");
     }
     const manualNotes = [manual.note].map(coerceText).filter(Boolean);
+    const blockerDecisions: StandupBlockerDecisionGroup[] = blockers.map((blocker) =>
+      synthesizeStandupBlockerDecisions({
+        agentId: agent.agentId,
+        agentName: agent.name,
+        currentTask,
+        blockerText: blocker,
+      })
+    );
     return {
       agentId: agent.agentId,
       agentName: agent.name,
       speech: buildSpeech(agent.name, currentTask, blockers),
       currentTask,
       blockers,
+      blockerDecisions,
       recentCommits: githubResult.commits.slice(0, 3),
       activeTickets,
       manualNotes,
@@ -369,6 +542,13 @@ export const buildStandupMeeting = async (params: {
     participantOrder: cards.map((card) => card.agentId),
     arrivedAgentIds: [],
     cards,
+    taskDispatch: {
+      status: "pending",
+      queuedAgentIds: [],
+      blockedAgentIds: [],
+      updatedAt: null,
+      error: null,
+    },
   };
 };
 
@@ -413,6 +593,81 @@ export const meetingHasEveryoneArrived = (meeting: StandupMeeting): boolean => {
   return meeting.participantOrder.every((agentId) =>
     meeting.arrivedAgentIds.includes(agentId)
   );
+};
+
+export const resolveStandupBlocker = (
+  meeting: StandupMeeting,
+  params: {
+    agentId: string;
+    blockerIndex?: number;
+    optionId?: string;
+    decisionText: string;
+  }
+): StandupMeeting => {
+  const nowIso = new Date().toISOString();
+  const decisionText = coerceText(params.decisionText);
+  if (!decisionText) return meeting;
+
+  const targetCardIndex = meeting.cards.findIndex(
+    (card) => card.agentId === params.agentId
+  );
+  if (targetCardIndex < 0) return meeting;
+
+  const card = meeting.cards[targetCardIndex]!;
+  const updatedDecisions = (card.blockerDecisions ?? []).map((group, idx) => {
+    if (
+      params.blockerIndex === undefined ||
+      params.blockerIndex === idx ||
+      ((card.blockerDecisions?.length ?? 0) === 1 && params.blockerIndex === 0)
+    ) {
+      return {
+        ...group,
+        selectedDecision: {
+          optionId: params.optionId,
+          text: decisionText,
+          decidedAt: nowIso,
+        },
+      };
+    }
+    return group;
+  });
+
+  const nextCards = [...meeting.cards];
+  nextCards[targetCardIndex] = {
+    ...card,
+    blockerDecisions: updatedDecisions,
+  };
+
+  // Also update matching Kanban task in shared-store directly on disk!
+  try {
+    const allTasks = listSharedTasks();
+    const matchingTask = allTasks.find(
+      (task) =>
+        !task.isArchived &&
+        task.assignedAgentId === params.agentId &&
+        (task.status === "needs_attention" || task.title === card.currentTask)
+    );
+    if (matchingTask) {
+      const decisionTag = `\n\n[HUMAN DECISION (${nowIso})]: ${decisionText}`;
+      const updatedDescription = matchingTask.description.includes(decisionText)
+        ? matchingTask.description
+        : `${matchingTask.description}${decisionTag}`.trim();
+      upsertSharedTask({
+        ...matchingTask,
+        description: updatedDescription,
+        status: "working",
+        updatedAt: nowIso,
+      });
+    }
+  } catch {
+    // Non-fatal if shared store is unavailable
+  }
+
+  return {
+    ...meeting,
+    cards: nextCards,
+    updatedAt: nowIso,
+  };
 };
 
 const expandRange = (segment: string): number[] => {
@@ -501,3 +756,12 @@ export const isSameScheduleMinute = (
     leftParts.month === rightParts.month
   );
 };
+
+export const updateStandupTaskDispatch = (
+  meeting: StandupMeeting,
+  taskDispatch: StandupTaskDispatchState
+): StandupMeeting => ({
+  ...meeting,
+  taskDispatch,
+  updatedAt: new Date().toISOString(),
+});

@@ -84,6 +84,8 @@ export const ITEM_FOOTPRINT: Record<string, [number, number]> = {
   trash: [20, 20],
   mug: [14, 14],
   clock: [20, 20],
+  presentation_screen: [120, 10],
+  metrics_board: [100, 10],
 };
 
 export const getItemBaseSize = (item: FurnitureItem) => {
@@ -140,6 +142,8 @@ export const ITEM_METADATA: Record<string, { blocksNavigation: boolean; navPaddi
   vending:         { blocksNavigation: true  },
   atm:             { blocksNavigation: true  },
   whiteboard:      { blocksNavigation: true  },
+  presentation_screen: { blocksNavigation: false }, // wall-mounted display
+  metrics_board:   { blocksNavigation: false }, // wall-mounted dashboard
   computer:        { blocksNavigation: false }, // desk item
   keyboard:        { blocksNavigation: false }, // desk decoration
   mouse:           { blocksNavigation: false }, // desk decoration

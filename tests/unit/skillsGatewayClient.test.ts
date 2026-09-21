@@ -58,6 +58,33 @@ describe("skills gateway client", () => {
     });
   });
 
+  it("repairs a missing workspace reported by the Hermes Agent bridge", async () => {
+    const client = {
+      call: vi.fn(async (method: string) => {
+        if (method === "skills.status") {
+          return { skills: [] };
+        }
+        if (method === "agents.files.get") {
+          return {
+            file: {
+              missing: false,
+              content: "# IDENTITY",
+              path: "C:\\hermes\\profiles\\build-agent\\IDENTITY.md",
+            },
+          };
+        }
+        throw new Error(`Unexpected method: ${method}`);
+      }),
+    } as unknown as GatewayClient;
+
+    const result = await loadAgentSkillStatus(client, "build-agent");
+
+    expect(result.workspaceDir).toBe("C:\\hermes\\profiles\\build-agent");
+    expect(result.managedSkillsDir).toBe(
+      "C:\\hermes\\profiles\\build-agent/skills",
+    );
+  });
+
   it("derives workspace from file path when agents.files.get reports the root workspace", async () => {
     const client = {
       call: vi.fn(async (method: string) => {

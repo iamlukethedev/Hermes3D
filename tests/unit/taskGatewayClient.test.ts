@@ -3,10 +3,15 @@ import { describe, expect, it, vi } from "vitest";
 import type { GatewayClient } from "@/lib/gateway/GatewayClient";
 import { GatewayResponseError } from "@/lib/gateway/errors";
 import {
+  commentGatewayTask,
   createGatewayTask,
   deleteGatewayTask,
+  dispatchGatewayTasks,
+  getGatewayTaskActivity,
+  getGatewayTaskDetail,
   isUnsupportedTaskGatewayError,
   listGatewayTasks,
+  replyAndResumeGatewayTask,
   updateGatewayTask,
 } from "@/lib/tasks/gateway";
 
@@ -31,6 +36,11 @@ describe("task gateway client", () => {
       description: "Release the board.",
       status: "inbox",
       source: "hermes3d_manual",
+      idempotencyKey: "standup:meeting-1:agent-1",
+      maxRuntimeSeconds: 3_600,
+      goalMode: true,
+      goalMaxTurns: 8,
+      workspaceKind: "worktree",
     });
 
     expect(client.call).toHaveBeenCalledWith(
@@ -40,8 +50,77 @@ describe("task gateway client", () => {
         description: "Release the board.",
         status: "inbox",
         source: "hermes3d_manual",
+        idempotencyKey: "standup:meeting-1:agent-1",
+        maxRuntimeSeconds: 3_600,
+        goalMode: true,
+        goalMaxTurns: 8,
+        workspaceKind: "worktree",
       })
     );
+  });
+
+  it("nudges the Hermes dispatcher with a bounded worker count", async () => {
+    const client = {
+      call: vi.fn(async () => ({ spawned: [] })),
+    } as unknown as GatewayClient;
+
+    await dispatchGatewayTasks(client, { max: 4 });
+
+    expect(client.call).toHaveBeenCalledWith("tasks.dispatch", { max: 4 });
+  });
+
+  it("reads bounded worker activity for a Hermes Kanban task", async () => {
+    const client = {
+      call: vi.fn(async () => ({
+        taskId: "kanban:t_1",
+        exists: true,
+        sizeBytes: 42,
+        content: "working",
+      })),
+    } as unknown as GatewayClient;
+
+    await getGatewayTaskActivity(client, { id: "kanban:t_1", tail: 30_000 });
+
+    expect(client.call).toHaveBeenCalledWith("tasks.activity", {
+      id: "kanban:t_1",
+      tail: 30_000,
+    });
+  });
+
+  it("loads, comments on, and resumes a native Hermes task", async () => {
+    const client = {
+      call: vi.fn(async () => ({
+        taskId: "kanban:t_1",
+        nativeStatus: "blocked",
+        blockKind: "needs_input",
+        blockerReason: "Choose a release window.",
+        comments: [],
+        eventCount: 0,
+        runCount: 1,
+      })),
+    } as unknown as GatewayClient;
+
+    await getGatewayTaskDetail(client, "kanban:t_1");
+    await commentGatewayTask(client, {
+      id: "kanban:t_1",
+      body: "Use Tuesday morning.",
+    });
+    await replyAndResumeGatewayTask(client, {
+      id: "kanban:t_1",
+      reply: "Use Tuesday morning.",
+    });
+
+    expect(client.call).toHaveBeenNthCalledWith(1, "tasks.show", {
+      id: "kanban:t_1",
+    });
+    expect(client.call).toHaveBeenNthCalledWith(2, "tasks.comment", {
+      id: "kanban:t_1",
+      body: "Use Tuesday morning.",
+    });
+    expect(client.call).toHaveBeenNthCalledWith(3, "tasks.unblock", {
+      id: "kanban:t_1",
+      reply: "Use Tuesday morning.",
+    });
   });
 
   it("updates and deletes tasks via gateway methods", async () => {

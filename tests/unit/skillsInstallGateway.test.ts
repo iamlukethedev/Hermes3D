@@ -4,6 +4,53 @@ import type { GatewayClient } from "@/lib/gateway/GatewayClient";
 import { installPackagedSkillViaGatewayAgent } from "@/lib/skills/install-gateway";
 
 describe("skills install gateway", () => {
+  it("uses the Hermes Agent direct installer when skill status omits workspace paths", async () => {
+    const call = vi.fn(async (method: string, params?: Record<string, unknown>) => {
+      expect(method).toBe("skills.packaged.install");
+      expect(params).toMatchObject({
+        agentId: "build-agent",
+        skillKey: "task-manager",
+      });
+      expect(params?.files).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ relativePath: "SKILL.md" }),
+        ]),
+      );
+      return {
+        installed: true,
+        installedPath:
+          "C:\\Users\\Utilisateur\\AppData\\Local\\hermes\\profiles\\build-agent\\skills\\task-manager",
+        source: "hermes-workspace",
+        skillKey: "task-manager",
+      };
+    });
+    const client = {
+      call,
+      getLastHello: () => ({
+        features: { methods: ["skills.status", "skills.packaged.install"] },
+      }),
+    } as unknown as GatewayClient;
+
+    const result = await installPackagedSkillViaGatewayAgent({
+      client,
+      request: {
+        packageId: "task-manager",
+        source: "hermes-workspace",
+        workspaceDir: undefined as unknown as string,
+        managedSkillsDir: undefined as unknown as string,
+        agentId: "build-agent",
+        agentName: "Build-agent",
+      },
+    });
+
+    expect(result).toMatchObject({
+      installed: true,
+      skillKey: "task-manager",
+      source: "hermes-workspace",
+    });
+    expect(call).toHaveBeenCalledTimes(1);
+  });
+
   it("creates a temporary installer agent and installs a workspace skill", async () => {
     const call = vi.fn(async (method: string) => {
       if (method === "agents.create") {

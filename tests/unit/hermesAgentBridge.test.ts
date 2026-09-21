@@ -1,12 +1,18 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { WebSocketServer, type WebSocket as WsSocket } from "ws";
 import type { AddressInfo } from "node:net";
 
 const { buildJsonRpcUrl, redactUrl } = await import("../../server/hermes-agent/jsonrpc-client");
-const { createHermesAgentUpstream, toHermes3dMessages } = await import(
-  "../../server/hermes-agent/bridge"
-);
+const {
+  createHermesAgentUpstream,
+  toHermes3dMessages,
+  requestSessionListWithRetry,
+  isTransientStateDbUnavailable,
+} = await import("../../server/hermes-agent/bridge");
 
 type Frame = Record<string, unknown>;
 type RpcHandler = (params: Frame, emit: (type: string, payload: Frame) => void) => Frame | void;
@@ -19,6 +25,63 @@ const at = (source: unknown, path: string): unknown =>
 
 const servers: WebSocketServer[] = [];
 const upstreams: { terminate: () => void }[] = [];
+const temporaryProfileDirs: string[] = [];
+
+describe("session.list cold-start retry", () => {
+  it("retries a transient state database error and returns the next result", async () => {
+    let requests = 0;
+    let sleeps = 0;
+    const client = {
+      request: async (method: string, params: Frame) => {
+        requests += 1;
+        expect(method).toBe("session.list");
+        expect(params).toEqual({ profile: "qa-agent", limit: 20 });
+        if (requests === 1) throw new Error("state.db unavailable: state.db unavailable");
+        return { sessions: [{ id: "ready" }] };
+      },
+    };
+
+    const result = await requestSessionListWithRetry(
+      client,
+      { profile: "qa-agent", limit: 20 },
+      {
+        delays: [1],
+        sleep: async () => {
+          sleeps += 1;
+        },
+      },
+    );
+
+    expect(result).toEqual({ sessions: [{ id: "ready" }] });
+    expect(requests).toBe(2);
+    expect(sleeps).toBe(1);
+  });
+
+  it("does not retry unrelated session errors", async () => {
+    let requests = 0;
+    let sleeps = 0;
+    const failure = new Error("authentication failed");
+    const client = {
+      request: async () => {
+        requests += 1;
+        throw failure;
+      },
+    };
+
+    await expect(
+      requestSessionListWithRetry(client, {}, {
+        delays: [1, 2],
+        sleep: async () => {
+          sleeps += 1;
+        },
+      }),
+    ).rejects.toBe(failure);
+
+    expect(isTransientStateDbUnavailable(failure)).toBe(false);
+    expect(requests).toBe(1);
+    expect(sleeps).toBe(0);
+  });
+});
 
 afterEach(async () => {
   for (const upstream of upstreams.splice(0)) {
@@ -28,6 +91,15 @@ afterEach(async () => {
   }
   for (const server of servers.splice(0)) {
     await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+  for (const directory of temporaryProfileDirs.splice(0)) {
+    const resolved = path.resolve(directory);
+    if (
+      path.dirname(resolved) === path.resolve(os.tmpdir()) &&
+      path.basename(resolved).startsWith("hermes3d-profile-")
+    ) {
+      fs.rmSync(resolved, { recursive: true, force: true });
+    }
   }
 });
 
@@ -347,6 +419,74 @@ describe("profiles as agents", () => {
     const res = await bridge.waitFor((f) => f.type === "res" && f.id === "c1", "hello-ok");
     expect((at(res, "payload.snapshot.health.agents") as unknown[]).length).toBe(1);
     expect(at(res, "payload.snapshot.health.defaultAgentId")).toBe("hermes");
+  });
+
+  it("installs packaged skills into the selected Hermes profile and reports them", async () => {
+    const profileDir = fs.mkdtempSync(path.join(os.tmpdir(), "hermes3d-profile-"));
+    temporaryProfileDirs.push(profileDir);
+    const agent = await startFakeHermesAgent({
+      "profiles.list": () => ({
+        profiles: [
+          {
+            name: "build-agent",
+            path: profileDir,
+            is_default: true,
+            display_name: "Build-agent",
+          },
+        ],
+      }),
+      "skills.manage": () => ({ skills: {} }),
+    });
+    const bridge = await openBridge(agent.url);
+
+    bridge.send({ type: "req", id: "connect", method: "connect", params: {} });
+    await bridge.waitFor(
+      (frame) => frame.type === "res" && frame.id === "connect",
+      "connect",
+    );
+    bridge.send({
+      type: "req",
+      id: "install",
+      method: "skills.packaged.install",
+      params: {
+        agentId: "build-agent",
+        skillKey: "task-manager",
+        files: [
+          {
+            relativePath: "SKILL.md",
+            content:
+              '---\nname: task-manager\ndescription: Persistent task management.\nmetadata: {"hermes":{"skillKey":"task-manager"}}\n---\n',
+          },
+        ],
+      },
+    });
+    const installed = await bridge.waitFor(
+      (frame) => frame.type === "res" && frame.id === "install",
+      "skills.packaged.install",
+    );
+
+    expect(installed.ok).toBe(true);
+    expect(fs.readFileSync(path.join(profileDir, "skills", "task-manager", "SKILL.md"), "utf8"))
+      .toContain("Persistent task management.");
+
+    bridge.send({
+      type: "req",
+      id: "status",
+      method: "skills.status",
+      params: { agentId: "build-agent" },
+    });
+    const status = await bridge.waitFor(
+      (frame) => frame.type === "res" && frame.id === "status",
+      "skills.status",
+    );
+
+    expect(at(status, "payload.workspaceDir")).toBe(profileDir);
+    expect(at(status, "payload.skills.0")).toMatchObject({
+      name: "task-manager",
+      skillKey: "task-manager",
+      source: "hermes-workspace",
+      eligible: true,
+    });
   });
 });
 

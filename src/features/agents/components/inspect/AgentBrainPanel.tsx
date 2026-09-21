@@ -16,6 +16,7 @@ import {
   serializePersonalityFiles,
 } from "@/lib/agents/personalityBuilder";
 import { useAgentFilesEditor } from "@/features/agents/hooks/useAgentFilesEditor";
+import { useManagedFleetProfile } from "@/features/agents/hooks/useManagedFleetProfile";
 
 export type AgentBrainPanelProps = {
   client: GatewayClient;
@@ -91,6 +92,9 @@ export const AgentBrainPanel = ({
     saveAgentFiles,
     initializeAgentFiles,
   } = useAgentFilesEditor({ client, agentId: selectedAgent?.agentId ?? null });
+  const managedFleet = useManagedFleetProfile(selectedAgent?.agentId ?? null);
+  const managedProfile = managedFleet.profile;
+  const isManagedProfile = Boolean(managedProfile);
   const draft = useMemo(() => parsePersonalityFiles(agentFiles), [agentFiles]);
   const [saveError, setSaveError] = useState<string | null>(null);
   const missingPersonalityFiles = useMemo(
@@ -100,16 +104,17 @@ export const AgentBrainPanel = ({
 
   const setIdentityField = useCallback(
     (field: "name" | "creature" | "vibe" | "emoji" | "avatar", value: string) => {
+      if (isManagedProfile) return;
       const nextDraft = parsePersonalityFiles(agentFiles);
       nextDraft.identity[field] = value;
       const serialized = serializePersonalityFiles(nextDraft);
       setAgentFileContent("IDENTITY.md", serialized["IDENTITY.md"]);
     },
-    [agentFiles, setAgentFileContent]
+    [agentFiles, isManagedProfile, setAgentFileContent]
   );
 
   const handleSave = useCallback(async () => {
-    if (agentFilesLoading || agentFilesSaving || !agentFilesDirty) return;
+    if (isManagedProfile || agentFilesLoading || agentFilesSaving || !agentFilesDirty) return;
     setSaveError(null);
     const saved = await saveAgentFiles();
     if (!saved || !selectedAgent || !onRename) {
@@ -129,13 +134,14 @@ export const AgentBrainPanel = ({
     agentFilesLoading,
     agentFilesSaving,
     draft.identity.name,
+    isManagedProfile,
     onRename,
     saveAgentFiles,
     selectedAgent,
   ]);
 
   const handleInitializeMissingFiles = useCallback(async () => {
-    if (!selectedAgent) return;
+    if (!selectedAgent || isManagedProfile) return;
     setSaveError(null);
     const nextDraft = createEmptyPersonalityDraft();
     nextDraft.identity.name = selectedAgent.name.trim();
@@ -145,11 +151,11 @@ export const AgentBrainPanel = ({
       missingPersonalityFiles.map((name) => [name, serialized[name]])
     ) as Partial<Record<AgentFileName, string>>;
     await initializeAgentFiles(missingEntries);
-  }, [initializeAgentFiles, missingPersonalityFiles, selectedAgent]);
+  }, [initializeAgentFiles, isManagedProfile, missingPersonalityFiles, selectedAgent]);
 
   useEffect(() => {
-    onUnsavedChangesChange?.(agentFilesDirty);
-  }, [agentFilesDirty, onUnsavedChangesChange]);
+    onUnsavedChangesChange?.(isManagedProfile ? false : agentFilesDirty);
+  }, [agentFilesDirty, isManagedProfile, onUnsavedChangesChange]);
 
   useEffect(() => {
     return () => {
@@ -180,7 +186,7 @@ export const AgentBrainPanel = ({
             className="h-[min(56vh,480px)] w-full resize-y rounded-md border border-border/80 bg-background px-4 py-3 font-mono text-sm leading-6 text-foreground outline-none"
             value={file.content}
             placeholder={!file.exists ? `No ${name} yet.` : ""}
-            disabled={agentFilesLoading || agentFilesSaving}
+            disabled={isManagedProfile || agentFilesLoading || agentFilesSaving}
             onChange={(event) => {
               setAgentFileContent(name, event.target.value);
             }}
@@ -188,7 +194,7 @@ export const AgentBrainPanel = ({
         </AgentBrainPanelSection>
       );
     },
-    [agentFiles, agentFilesLoading, agentFilesSaving, setAgentFileContent],
+    [agentFiles, agentFilesLoading, agentFilesSaving, isManagedProfile, setAgentFileContent],
   );
 
   const renderIdentityEditor = useCallback(
@@ -208,14 +214,14 @@ export const AgentBrainPanel = ({
         />
         <AgentIdentityFields
           values={draft.identity}
-          disabled={agentFilesLoading || agentFilesSaving}
+          disabled={isManagedProfile || agentFilesLoading || agentFilesSaving}
           onChange={(field, value) => {
             setIdentityField(field, value);
           }}
         />
       </section>
     ),
-    [agentFiles, agentFilesLoading, agentFilesSaving, draft.identity, setIdentityField],
+    [agentFiles, agentFilesLoading, agentFilesSaving, draft.identity, isManagedProfile, setIdentityField],
   );
 
   const renderedSections = useMemo(() => {
@@ -244,6 +250,92 @@ export const AgentBrainPanel = ({
           className="mx-auto flex min-h-0 w-full max-w-[920px] flex-col"
           data-testid="agent-personality-files"
         >
+          {managedProfile ? (
+            <div className="mb-5 space-y-3 rounded-lg border border-sky-500/35 bg-sky-500/10 p-4 text-xs">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="font-medium text-foreground">Managed by {managedFleet.fleetId}</div>
+                  <div className="mt-1 text-muted-foreground">
+                    Edit the canonical profile in HermesProjects, then validate, preview, and apply the
+                    complete projection. Direct live-file saves are disabled.
+                  </div>
+                </div>
+                <span className="rounded-full border border-border/70 px-2 py-1 font-mono text-[10px] uppercase text-foreground">
+                  {managedProfile.health.status}
+                </span>
+              </div>
+              <div className="grid gap-2 text-muted-foreground md:grid-cols-2">
+                <div>
+                  Source: <span className="font-mono text-foreground">{managedFleet.sourceHash?.slice(0, 12)}</span>
+                </div>
+                <div>
+                  Deployed: <span className="font-mono text-foreground">{managedProfile.health.deployedHash?.slice(0, 12) ?? "none"}</span>
+                </div>
+                <div>Workspace: <span className="text-foreground">{managedProfile.workspace.mode}</span></div>
+                <div>Heartbeat: <span className="text-foreground">{managedProfile.heartbeat.responsibility}</span></div>
+                <div className="md:col-span-2">
+                  Memory: curated role invariants; learned local context is unverified; shared vaults are {managedProfile.memory.shared_vaults}.
+                </div>
+                <div className="md:col-span-2">
+                  Skills: <span className="text-foreground">{managedProfile.skills.join(", ")}</span>
+                </div>
+                {managedProfile.health.missingFiles.length ? (
+                  <div className="md:col-span-2 text-amber-300">
+                    Missing: {managedProfile.health.missingFiles.join(", ")}
+                  </div>
+                ) : null}
+                {managedProfile.health.changedFiles.length ? (
+                  <div className="md:col-span-2 text-amber-300">
+                    Drift: {managedProfile.health.changedFiles.join(", ")}
+                  </div>
+                ) : null}
+              </div>
+              {managedFleet.error ? <div className="text-red-300">{managedFleet.error}</div> : null}
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  className="ui-btn-secondary px-3 py-2 text-xs"
+                  disabled={managedFleet.busy}
+                  onClick={() => void managedFleet.runAction("validate")}
+                >
+                  Validate
+                </button>
+                <button
+                  type="button"
+                  className="ui-btn-secondary px-3 py-2 text-xs"
+                  disabled={managedFleet.busy || managedFleet.validatedHash !== managedFleet.sourceHash}
+                  onClick={() => void managedFleet.runAction("diff")}
+                >
+                  Preview diff
+                </button>
+                <button
+                  type="button"
+                  className="ui-btn-primary px-3 py-2 text-xs disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={
+                    managedFleet.busy ||
+                    !managedFleet.mutationsEnabled ||
+                    managedFleet.previewedHash !== managedFleet.sourceHash
+                  }
+                  onClick={() => void managedFleet.runAction("apply")}
+                >
+                  Apply fleet
+                </button>
+                <button
+                  type="button"
+                  className="ui-btn-ghost px-3 py-2 text-xs"
+                  disabled={managedFleet.busy || !managedFleet.mutationsEnabled}
+                  onClick={() => void managedFleet.runAction("rollback")}
+                >
+                  Roll back latest
+                </button>
+              </div>
+              {managedFleet.output ? (
+                <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded-md border border-border/50 bg-black/30 p-3 font-mono text-[10px] text-muted-foreground">
+                  {managedFleet.output}
+                </pre>
+              ) : null}
+            </div>
+          ) : null}
           {agentFilesError ? (
             <div className="ui-alert-danger mb-4 rounded-md px-3 py-2 text-xs">
               {agentFilesError}
@@ -256,7 +348,7 @@ export const AgentBrainPanel = ({
           ) : null}
 
           <div className="mb-6 flex items-center justify-end gap-2 border-b border-border/40 pb-4">
-            {missingPersonalityFiles.length > 0 ? (
+            {!isManagedProfile && missingPersonalityFiles.length > 0 ? (
               <button
                 type="button"
                 className="ui-btn-secondary px-3 py-2 text-xs"
@@ -279,7 +371,7 @@ export const AgentBrainPanel = ({
             <button
               type="button"
               className="ui-btn-primary px-3 py-2 text-xs disabled:cursor-not-allowed disabled:border-border disabled:bg-muted disabled:text-muted-foreground"
-              disabled={agentFilesLoading || agentFilesSaving || !agentFilesDirty}
+              disabled={isManagedProfile || agentFilesLoading || agentFilesSaving || !agentFilesDirty}
               onClick={() => {
                 void handleSave();
               }}

@@ -1,6 +1,7 @@
 export const DESK_STICKY_MS = 10_000;
 export const SNAP_GRID = 10;
-export const STORAGE_KEY = "hermes-office-furniture-v9";
+export const STORAGE_KEY = "hermes-office-furniture-v11";
+export const STANDUP_TABLE_ID = "standup_table";
 export const ATM_MIGRATION_KEY = "hermes-office-atm-migration-v1";
 export const SERVER_ROOM_MIGRATION_KEY =
   "hermes-office-server-room-migration-v3";
@@ -11,7 +12,7 @@ export const SMS_BOOTH_MIGRATION_KEY = "hermes-office-sms-booth-migration-v1";
 export const ROTATION_STEP_DEG = 15;
 export const WALL_THICKNESS = 8;
 export const DOOR_THICKNESS = 8;
-export const DOOR_LENGTH = 40;
+export const DOOR_LENGTH = 60;
 export const MIN_WALL_LENGTH = SNAP_GRID * 2;
 export const ELEVATION_STEP = 0.08;
 export const WALK_SPEED = 0.3;
