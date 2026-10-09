@@ -57,6 +57,19 @@ export const useStudioOfficePreference = ({
     };
   }, [gatewayUrl, settingsCoordinator]);
 
+  const setTheme = useCallback((theme: "original" | "dellanio-house") => {
+    const gatewayKey = gatewayUrl.trim();
+    setPreference(current => ({...current, theme}));
+    if (gatewayKey) settingsCoordinator.schedulePatch({office:{[gatewayKey]:{theme}}},0);
+  }, [gatewayUrl, settingsCoordinator]);
+
+  const setNationalFlag = useCallback((flag: "us" | "br") => {
+    const theme = preference.theme ?? "original";
+    setPreference(current => ({...current, flagsByTheme: {...current.flagsByTheme, [theme]: flag}}));
+    const gatewayKey = gatewayUrl.trim();
+    if (gatewayKey) settingsCoordinator.schedulePatch({office:{[gatewayKey]:{flagsByTheme:{[theme]:flag}}}},0);
+  }, [gatewayUrl, settingsCoordinator, preference.theme]);
+
   const setTitle = useCallback(
     (title: string) => {
       const gatewayKey = gatewayUrl.trim();
@@ -196,6 +209,10 @@ export const useStudioOfficePreference = ({
   return {
     loaded,
     preference,
+    theme: preference.theme ?? "original",
+    setTheme,
+    nationalFlag: preference.flagsByTheme?.[preference.theme ?? "original"] ?? "us",
+    setNationalFlag,
     title: preference.title,
     remoteOfficeEnabled: preference.remoteOfficeEnabled,
     remoteOfficeSourceKind: preference.remoteOfficeSourceKind,

@@ -144,6 +144,8 @@ export type StudioVoiceRepliesPreferencePatch = {
 };
 
 export type StudioOfficePreference = {
+  theme?: "original" | "dellanio-house";
+  flagsByTheme?: Partial<Record<"original" | "dellanio-house", "us" | "br">>;
   title: string;
   remoteOfficeEnabled: boolean;
   remoteOfficeSourceKind: "presence_endpoint" | "hermes_gateway";
@@ -161,6 +163,8 @@ export type StudioOfficePreference = {
 };
 
 export type StudioOfficePreferencePublic = {
+  theme?: "original" | "dellanio-house";
+  flagsByTheme?: Partial<Record<"original" | "dellanio-house", "us" | "br">>;
   title: string;
   remoteOfficeEnabled: boolean;
   remoteOfficeSourceKind: "presence_endpoint" | "hermes_gateway";
@@ -178,6 +182,8 @@ export type StudioOfficePreferencePublic = {
 };
 
 export type StudioOfficePreferencePatch = {
+  theme?: "original" | "dellanio-house";
+  flagsByTheme?: Partial<Record<"original" | "dellanio-house", "us" | "br">>;
   title?: string | null;
   remoteOfficeEnabled?: boolean;
   remoteOfficeSourceKind?: "presence_endpoint" | "hermes_gateway";
@@ -622,6 +628,8 @@ const normalizeCompanyRoleTitles = (value: unknown, fallback: string[] = []) => 
 };
 
 export const defaultStudioOfficePreference = (): StudioOfficePreference => ({
+  theme: "original",
+  flagsByTheme: {original: "us", "dellanio-house": "us"},
   title: DEFAULT_OFFICE_TITLE,
   remoteOfficeEnabled: false,
   remoteOfficeSourceKind: DEFAULT_REMOTE_OFFICE_SOURCE_KIND,
@@ -640,7 +648,9 @@ export const defaultStudioOfficePreference = (): StudioOfficePreference => ({
 
 export const defaultStudioOfficePreferencePublic =
   (): StudioOfficePreferencePublic => ({
-    title: DEFAULT_OFFICE_TITLE,
+    theme: "original",
+  flagsByTheme: {original: "us", "dellanio-house": "us"},
+  title: DEFAULT_OFFICE_TITLE,
     remoteOfficeEnabled: false,
     remoteOfficeSourceKind: DEFAULT_REMOTE_OFFICE_SOURCE_KIND,
     remoteOfficeLabel: DEFAULT_REMOTE_OFFICE_LABEL,
@@ -659,6 +669,8 @@ export const defaultStudioOfficePreferencePublic =
 export const sanitizeStudioOfficePreference = (
   value: StudioOfficePreference
 ): StudioOfficePreferencePublic => ({
+  theme: value.theme ?? "original",
+  flagsByTheme: value.flagsByTheme ?? {original: "us", "dellanio-house": "us"},
   title: value.title,
   remoteOfficeEnabled: value.remoteOfficeEnabled,
   remoteOfficeSourceKind: value.remoteOfficeSourceKind,
@@ -1183,6 +1195,11 @@ const normalizeOfficePreference = (
 ): StudioOfficePreference => {
   if (!isRecord(value)) return fallback;
   return {
+    theme: value.theme === "dellanio-house" ? "dellanio-house" : value.theme === "original" ? "original" : fallback.theme ?? "original",
+    flagsByTheme: Object.fromEntries((["original", "dellanio-house"] as const).map(theme => {
+      const flag = isRecord(value.flagsByTheme) ? value.flagsByTheme[theme] : undefined;
+      return [theme, flag === "br" || flag === "us" ? flag : fallback.flagsByTheme?.[theme] ?? "us"];
+    })),
     title: normalizeOfficeTitle(value.title, fallback.title),
     remoteOfficeEnabled:
       typeof value.remoteOfficeEnabled === "boolean"

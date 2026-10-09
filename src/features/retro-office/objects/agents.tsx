@@ -73,6 +73,7 @@ const clampSpeechBubbleText = (value: string) => {
 };
 
 export const AgentModel = memo(function AgentModel({
+  statusOnly = false,
   agentId,
   name,
   subtitle,
@@ -130,7 +131,9 @@ export const AgentModel = memo(function AgentModel({
     if (!agent || !groupRef.current) return;
 
     const [wx, , wz] = toWorld(agent.x, agent.y);
-    pos.current.set(wx, 0, wz);
+    const inWater = (agent.poolPhase === 'swimming' || agent.poolPhase === 'entering' || agent.poolPhase === 'exiting') && agent.y > 1275;
+    // Wading keeps the head above the shallow water; no submerged desk poses.
+    pos.current.set(wx, inWater ? -0.12 + Math.sin(agent.frame * 0.06) * 0.025 : 0, wz);
     groupRef.current.position.lerp(pos.current, 0.15);
 
     const targetY = agent.facing;
@@ -192,13 +195,16 @@ export const AgentModel = memo(function AgentModel({
       agent.state === "standing" || isWorkout || agent.pingPongUntil
         ? Math.sin(frameValue * 0.03) * 0.01
         : 0;
-    groupRef.current.position.y = bounce + breathe;
+    groupRef.current.position.y = inWater ? -0.12 + Math.sin(agent.frame*0.06)*0.025 : bounce + breathe;
 
     if (leftArmRef.current) {
       leftArmRef.current.rotation.x = 0;
       leftArmRef.current.rotation.y = 0;
       leftArmRef.current.rotation.z = 0;
-      if (isJanitor && janitorTool !== "broom") {
+      if (inWater) {
+        leftArmRef.current.rotation.x = -0.65 + Math.sin(agent.frame*0.07)*0.35;
+        leftArmRef.current.rotation.z = -0.35;
+      } else if (isJanitor && janitorTool !== "broom") {
         leftArmRef.current.rotation.x = -0.22;
         leftArmRef.current.rotation.z = -0.08;
       } else if (agent.state === "walking") {
@@ -256,7 +262,10 @@ export const AgentModel = memo(function AgentModel({
       rightArmRef.current.rotation.x = 0;
       rightArmRef.current.rotation.y = 0;
       rightArmRef.current.rotation.z = 0;
-      if (isJanitor && janitorTool !== "broom") {
+      if (inWater) {
+        rightArmRef.current.rotation.x = -0.65 - Math.sin(agent.frame*0.07)*0.35;
+        rightArmRef.current.rotation.z = 0.35;
+      } else if (isJanitor && janitorTool !== "broom") {
         rightArmRef.current.rotation.x = -0.95;
         rightArmRef.current.rotation.y = 0.18;
         rightArmRef.current.rotation.z = 0.08;
@@ -353,16 +362,14 @@ export const AgentModel = memo(function AgentModel({
     }
 
     const working =
-      agent.state === "sitting" ||
-      isWorkout ||
-      isDancing ||
-      agent.status === "working";
+      agent.status === "working" ||
+      (!statusOnly && (agent.state === "sitting" || isWorkout || isDancing));
     const isError = agent.status === "error";
     const isAway = agent.state === "away";
 
     if (statusDotMatRef.current) {
       statusDotMatRef.current.color.set(
-        isError ? "#ef4444" : working ? "#22c55e" : "#f59e0b",
+        isError ? "#ef4444" : working ? "#22c55e" : statusOnly ? "#94a3b8" : "#f59e0b",
       );
     }
 
@@ -1176,7 +1183,8 @@ export const AgentModel = memo(function AgentModel({
             <planeGeometry args={[0.028, subtitleText ? 0.34 : 0.24]} />
             <meshBasicMaterial color={color} />
           </mesh>
-          <mesh position={[0.355, subtitleText ? 0.05 : 0, 0]}>
+          <mesh name={`office-status:${agentId}`} position={[0.355, subtitleText ? 0.05 : 0, 0]}>
+            {/* Runtime badge material is discoverable by read-only browser probes. */}
             <circleGeometry args={[0.052, 14]} />
             <meshBasicMaterial ref={statusDotMatRef} color="#ef4444" />
           </mesh>

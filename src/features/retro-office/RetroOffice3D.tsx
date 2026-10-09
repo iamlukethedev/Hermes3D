@@ -177,6 +177,9 @@ import type {
 } from "@/features/retro-office/core/types";
 import type { NavGrid } from "@/features/retro-office/core/navigation";
 import type { OfficeLayoutSnapshot } from "@/lib/office/layoutSnapshot";
+import { leisureSlot, idleLeisurePosition, advanceOfficeCommute, buildHouseNavGrid, ensureHouseWorkstations, prepareHouseArchitecture } from "@/features/retro-office/core/leisure";
+import { HouseScene } from "@/features/retro-office/scene/HouseScene";
+import { stepHouseLeisure, stepHousePoolExit, HOUSE_WALK_SPEED_FACTOR, type HouseLeisureState } from "@/features/retro-office/core/houseLeisure";
 import { AgentModel as AgentObjectModel } from "@/features/retro-office/objects/agents";
 import { JukeboxModel as InteractiveJukeboxModel } from "@/features/retro-office/objects/Jukebox";
 import {
@@ -262,7 +265,7 @@ import type { OfficeCleaningCue } from "@/lib/office/janitorReset";
 type OfficeDeskMonitorMap = Record<string, OfficeDeskMonitor>;
 type RenderAgentUiSnapshot = Pick<
   RenderAgent,
-  "state" | "status" | "conversationGroupId" | "conversationSeatIndex"
+  "state" | "status" | "conversationGroupId" | "conversationSeatIndex" | "x" | "y" | "targetX" | "targetY" | "poolPhase"
 >;
 type FeedEvent = {
   id: string;
@@ -908,6 +911,7 @@ function useAgentTick(
   standupMeeting: StandupMeeting | null = null,
   conversationGroups: ConversationGroup[] = [],
   conversationExpiryRef: React.RefObject<Map<string, number>> | null = null,
+  houseTheme = false,
 ) {
   const renderAgentsRef = useRef<RenderAgent[]>([]);
   const renderAgentLookupRef = useRef<Map<string, RenderAgent>>(new Map());
@@ -921,15 +925,18 @@ function useAgentTick(
   // Nav grid is rebuilt lazily whenever the furniture array reference changes.
   const navGridRef = useRef<NavGrid | null>(null);
   const gridSourceRef = useRef<FurnitureItem[]>([]);
+  const gridThemeRef = useRef(houseTheme);
+  const houseLeisureRef = useRef(new Map<string, HouseLeisureState>());
 
   const getNavGrid = useCallback((): NavGrid => {
     const furniture = furnitureRef.current ?? [];
-    if (navGridRef.current === null || gridSourceRef.current !== furniture) {
-      navGridRef.current = buildNavGrid(furniture);
+    if (navGridRef.current === null || gridSourceRef.current !== furniture || gridThemeRef.current !== houseTheme) {
+      gridThemeRef.current = houseTheme;
+      navGridRef.current = houseTheme ? buildHouseNavGrid(furniture) : buildNavGrid(furniture);
       gridSourceRef.current = furniture;
     }
     return navGridRef.current;
-  }, [furnitureRef]);
+  }, [furnitureRef, houseTheme]);
 
   const planPath = useCallback(
     (fx: number, fy: number, tx: number, ty: number) =>
@@ -1096,7 +1103,7 @@ function useAgentTick(
         } as RenderAgent);
         return;
       }
-      const assignedDeskIndex = assignedDeskIndexByAgentId[agent.id];
+      const assignedDeskIndex = houseTheme ? [...new Set(agents.map(a=>a.id))].sort().indexOf(agent.id) : assignedDeskIndexByAgentId[agent.id];
       if (
         typeof assignedDeskIndex === "number" &&
         assignedDeskIndex >= 0 &&
@@ -1195,7 +1202,7 @@ function useAgentTick(
               explicitQaHold ||
               explicitGithubHold ||
               agent.status === "working" ||
-              stickyUntil > now
+              (!houseTheme && stickyUntil > now)
             ? "working"
             : "idle";
 
@@ -1900,6 +1907,22 @@ function useAgentTick(
               : Math.PI / 2,
         };
       }
+      if (houseTheme && effectiveStatus === "idle" && !conversationMembership) {
+        const saved = houseLeisureRef.current.get(agent.id);
+        const slot = saved?.slot ?? leisureSlot(agent.id, agents.map(a => a.id), gymWorkoutLocations, 0);
+        const currentX = ns.x ?? slot.x;
+        const currentY = ns.y ?? slot.y;
+        if (!existing) { ns.x = slot.x; ns.y = slot.y; }
+        ns.targetX = slot.x;
+        ns.targetY = slot.y;
+        ns.path = existing && Math.hypot(currentX-slot.x,currentY-slot.y)>6 ? planPath(currentX, currentY, slot.x, slot.y) : [];
+        ns.interactionTarget = undefined;
+        ns.pingPongUntil = undefined;
+        ns.bumpedUntil = undefined;
+        ns.facing = slot.facing;
+        ns.workoutStyle = slot.workoutStyle;
+        ns.state = saved?.poolPhase === 'swimming' ? "standing" : existing && Math.hypot(currentX-slot.x,currentY-slot.y)>6 ? "walking" : slot.area === "gym" ? "working_out" : (slot.activity === "pinball" || slot.activity === "coffee") ? "standing" : "sitting";
+      }
       next.push({ ...agent, ...ns, status: effectiveStatus } as RenderAgent);
     });
     renderAgentsRef.current = next;
@@ -1910,6 +1933,7 @@ function useAgentTick(
     }
   }, [
     agents,
+    houseTheme,
     assignedDeskIndexByAgentId,
     conversationGroups,
     conversationMembershipByAgentId,
@@ -1956,6 +1980,26 @@ function useAgentTick(
       ["couch", "couch_v", "beanbag"].includes(item.type),
     );
     const moved = renderAgentsRef.current.map((agent) => {
+      const leisureEligible = houseTheme && agent.status === "idle" && !agent.conversationGroupId && !agent.interactionTarget && !agent.pingPongUntil && !deskHoldByAgentId[agent.id] && !gymHoldByAgentId[agent.id] && !standupActive;
+      const saved = houseLeisureRef.current.get(agent.id);
+      if (houseTheme && !leisureEligible && saved?.poolPhase && saved.poolPhase !== 'approach') {
+        const exit = stepHousePoolExit({...saved,x:agent.x,y:agent.y},Math.max(agent.walkSpeed??3,3)*HOUSE_WALK_SPEED_FACTOR);
+        if (!exit.exited) {
+          houseLeisureRef.current.set(agent.id,{...saved,...exit});
+          return {...agent,...exit,frame:agent.frame+1};
+        }
+        houseLeisureRef.current.delete(agent.id);
+        return {...agent,...exit,path:planPath(exit.x,exit.y,agent.targetX,agent.targetY),frame:agent.frame+1};
+      }
+      if (leisureEligible) {
+        const movement = stepHouseLeisure(agent.id, agents.map(a=>a.id), {
+          ...saved,x:agent.x,y:agent.y,cycle:saved?.cycle??0,dwellUntil:saved?.dwellUntil??0,
+          path:saved?.path??[],targetX:saved?.targetX,targetY:saved?.targetY,
+        },grid,now,Math.max(agent.walkSpeed??3,3)*HOUSE_WALK_SPEED_FACTOR,{occupied:[...houseLeisureRef.current].filter(([id])=>id!==agent.id).map(([,s])=>s)});
+        houseLeisureRef.current.set(agent.id,movement);
+        return {...agent,...movement,interactionTarget:undefined,frame:agent.frame+1};
+      }
+      if (houseTheme && !leisureEligible) houseLeisureRef.current.delete(agent.id);
       const isJanitor = "role" in agent && agent.role === "janitor";
       if (isJanitor && agent.janitorPauseUntil !== undefined) {
         if (now < agent.janitorPauseUntil) {
@@ -2098,7 +2142,7 @@ function useAgentTick(
           frame: agent.frame + 1,
         };
       }
-      const baseSpeed = agent.walkSpeed ?? WALK_SPEED;
+      const baseSpeed = houseTheme ? Math.max(agent.walkSpeed ?? WALK_SPEED, 3)*HOUSE_WALK_SPEED_FACTOR : agent.walkSpeed ?? WALK_SPEED;
       const speed =
         agent.status === "working" && agent.state !== "sitting"
           ? baseSpeed * WORKING_WALK_SPEED_MULTIPLIER
@@ -2120,8 +2164,9 @@ function useAgentTick(
       let conversationTalkPulse = false;
 
       if (dist > speed) {
-        nx = agent.x + (dx / dist) * speed;
-        ny = agent.y + (dy / dist) * speed;
+        const step = advanceOfficeCommute(agent, {x:wpX,y:wpY}, speed);
+        nx = step.x;
+        ny = step.y;
         // atan2(dx, dy) gives the rotation.y angle for the direction of travel
         // (local +Z aligns with the movement vector when rotation.y = atan2(dx, dy)).
         nf = Math.atan2(dx, dy);
@@ -2366,6 +2411,18 @@ function useAgentTick(
           } else if (agent.status === "error") {
             ns = "standing";
           } else {
+            if (houseTheme) {
+            const slot = leisureSlot(agent.id, agents.map(a => a.id), gymWorkoutLocations);
+            ns = slot.area === "gym" ? "working_out" : (slot.activity === "pinball" || slot.activity === "coffee") ? "standing" : "sitting";
+            nf = slot.facing;
+            if (Math.hypot(nx-slot.x,ny-slot.y)>6) {
+              const route = astar(nx,ny,slot.x,slot.y,grid);
+              return { ...agent, x:nx, y:ny, targetX:slot.x, targetY:slot.y,
+                path:route, state:"walking" as const, frame:agent.frame+1 };
+            }
+            const local = advanceOfficeCommute({x:nx,y:ny}, idleLeisurePosition(agent.id,slot,now), 0.12);
+            nx=local.x; ny=local.y;
+            } else {
             // New Idea 9: away state — if idle for > AWAY_THRESHOLD_MS, send to nearest couch.
             const lastSeen = lastSeenByAgentId[agent.id] ?? 0;
             const isAway = lastSeen > 0 && now - lastSeen > AWAY_THRESHOLD_MS;
@@ -2452,11 +2509,12 @@ function useAgentTick(
                 frame: agent.frame + 1,
               };
             }
+            }
           }
         }
       }
 
-      if ((danceUntilByAgentId[agent.id] ?? 0) > now && ns !== "away") {
+      if ((danceUntilByAgentId[agent.id] ?? 0) > now && (!houseTheme ? ns !== "away" : agent.status !== "idle")) {
         ns = "dancing";
         npath = [];
       }
@@ -2477,7 +2535,7 @@ function useAgentTick(
 
     // Collision bump — when agents overlap, stop them briefly and reroute them
     // in different directions without the old hard shove.
-    const movedWithCollisions = applyAgentCollisionBumps({ agents: moved, now });
+    const movedWithCollisions = houseTheme ? applyAgentCollisionBumps({ agents: moved.filter(a => a.status !== "idle"), now }).concat(moved.filter(a => a.status === "idle")) : applyAgentCollisionBumps({ agents: moved, now });
 
     renderAgentsRef.current = movedWithCollisions;
     const renderAgentLookup = renderAgentLookupRef.current;
@@ -2525,7 +2583,9 @@ const buildInitialFurnitureLayout = (
   storageNamespace: string,
   layoutPreset: OfficeLayoutPreset,
 ): FurnitureItem[] =>
-  ensureOfficeKanbanBoard(
+  storageNamespace.endsWith(":dellanio-house")
+    ? prepareHouseArchitecture(loadFurniture(storageNamespace) ?? [])
+    : ensureOfficeKanbanBoard(
     ensureOfficeJukebox(
       ensureOfficeQaLab(
         ensureOfficeGymRoom(
@@ -2572,6 +2632,10 @@ export function RetroOffice3D({
   soundhermesEnabled = false,
   officeTitle = "Luke Headquarters",
   officeTitleLoaded = false,
+  nationalFlag = "us",
+  onNationalFlagChange,
+  officeTheme = "original",
+  onOfficeThemeChange,
   remoteOfficeEnabled = false,
   remoteOfficeSourceKind = "presence_endpoint",
   remoteOfficeLabel = "Remote Office",
@@ -2688,6 +2752,10 @@ export function RetroOffice3D({
   soundhermesEnabled?: boolean;
   officeTitle?: string;
   officeTitleLoaded?: boolean;
+  nationalFlag?: "us" | "br";
+  onNationalFlagChange?: (flag: "us" | "br") => void;
+  officeTheme?: "original" | "dellanio-house";
+  onOfficeThemeChange?: (theme:"original" | "dellanio-house")=>void;
   remoteOfficeEnabled?: boolean;
   remoteOfficeSourceKind?: "presence_endpoint" | "hermes_gateway";
   remoteOfficeLabel?: string;
@@ -2809,10 +2877,11 @@ export function RetroOffice3D({
     Boolean,
   );
 
+  const prepareFurniture = useCallback((items: FurnitureItem[]) => officeTheme === "dellanio-house" ? prepareHouseArchitecture(items) : items, [officeTheme]);
   const [furniture, setFurniture] = useState<FurnitureItem[]>(() =>
-    buildInitialFurnitureLayout(storageNamespace, layoutPreset).filter(
+    prepareFurniture(buildInitialFurnitureLayout(storageNamespace, layoutPreset).filter(
       (item) => !isRetiredPingPongLamp(item),
-    ),
+    )),
   );
   const defaultRemoteLayoutFurniture = useMemo(
     () =>
@@ -2872,9 +2941,9 @@ export function RetroOffice3D({
   // Sits below every state it resets so the setters exist when it runs.
   useEffect(() => {
     setFurniture(
-      buildInitialFurnitureLayout(storageNamespace, layoutPreset).filter(
+      prepareFurniture(buildInitialFurnitureLayout(storageNamespace, layoutPreset).filter(
         (item) => !isRetiredPingPongLamp(item),
-      ),
+      )),
     );
     setSelectedUid(null);
     setDeskActionUid(null);
@@ -2882,7 +2951,13 @@ export function RetroOffice3D({
     setDrag({ kind: "idle" });
     setGhostPos(null);
     setWallDrawStart(null);
-  }, [layoutPreset, storageNamespace]);
+  }, [layoutPreset, storageNamespace, prepareFurniture]);
+  // The scene mounts before the asynchronous roster. Reconcile capacity without
+  // reloading saved furniture or resetting existing actor positions.
+  useEffect(() => {
+    if (officeTheme !== "dellanio-house") return;
+    setFurniture((current) => ensureHouseWorkstations(current, agents.length));
+  }, [officeTheme, agents.length]);
   // New Idea 3: speech bubble agent IDs. Holds at most the one agent currently
   // granted the floor — see the speech-turn queue below.
   const [speechAgentIds, setSpeechAgentIds] = useState<Set<string>>(new Set());
@@ -3126,13 +3201,14 @@ export function RetroOffice3D({
       toWorld(LOCAL_OFFICE_CANVAS_WIDTH / 2, LOCAL_OFFICE_CANVAS_HEIGHT / 2),
     [],
   );
-  const cameraTarget = remoteOfficeEnabled
-    ? DISTRICT_CAMERA_TARGET
-    : LOCAL_CAMERA_TARGET;
-  const cameraZoom = remoteOfficeEnabled ? DISTRICT_CAMERA_ZOOM : 56;
+  const HOUSE_CAMERA_TARGET = useMemo(() => toWorld(900, 805), []);
+  const cameraTarget = officeTheme === "dellanio-house"
+    ? HOUSE_CAMERA_TARGET
+    : remoteOfficeEnabled ? DISTRICT_CAMERA_TARGET : LOCAL_CAMERA_TARGET;
+  const cameraZoom = officeTheme === "dellanio-house" ? 34 : remoteOfficeEnabled ? DISTRICT_CAMERA_ZOOM : 56;
   const CAM_POS = useMemo<[number, number, number]>(
-    () => computeOverviewCameraPosition(cameraTarget, cameraZoom),
-    [cameraTarget, cameraZoom],
+    () => officeTheme === "dellanio-house" ? [7,42,42] : computeOverviewCameraPosition(cameraTarget, cameraZoom),
+    [cameraTarget, cameraZoom, officeTheme],
   );
   const overviewPreset = useMemo(
     () => ({ pos: CAM_POS, target: cameraTarget, zoom: cameraZoom }),
@@ -3173,7 +3249,9 @@ export function RetroOffice3D({
     saveGraphicsQuality(quality);
   }, []);
   const handleCanvasCreated = useCallback(
-    ({ gl }: { gl: THREE.WebGLRenderer }) => {
+    ({ gl, scene, camera }: { gl: THREE.WebGLRenderer; scene: THREE.Scene; camera: THREE.Camera }) => {
+      // Read-only browser probes use the actual renderer/camera, not synthetic DOM buttons.
+      Object.assign(gl.domElement, { __officeScene: scene, __officeCamera: camera });
       // Allow the browser to restore a lost context instead of killing the
       // canvas — three re-uploads all GPU resources on restore.
       gl.domElement.addEventListener("webglcontextlost", (event) => {
@@ -3396,13 +3474,15 @@ export function RetroOffice3D({
     standupMeeting,
     conversationGroups,
     conversationExpiryRef,
+    officeTheme === "dellanio-house",
   );
   useEffect(() => {
     const syncRenderAgentUi = () => {
       const next: Record<string, RenderAgentUiSnapshot> = {};
       for (const agent of renderAgentsRef.current) {
         next[agent.id] = {
-          state: agent.state,
+          x: Math.round(agent.x), y: Math.round(agent.y), targetX:agent.targetX, targetY:agent.targetY,
+          state: agent.state, poolPhase: agent.poolPhase,
           status: agent.status,
           conversationGroupId: agent.conversationGroupId,
           conversationSeatIndex: agent.conversationSeatIndex,
@@ -3419,6 +3499,7 @@ export function RetroOffice3D({
             const after = next[id];
             if (
               !after ||
+              (officeTheme === "dellanio-house" && (before.x !== after.x || before.y !== after.y || before.targetX !== after.targetX || before.targetY !== after.targetY)) ||
               before.state !== after.state ||
               before.status !== after.status ||
               before.conversationGroupId !== after.conversationGroupId ||
@@ -3439,7 +3520,7 @@ export function RetroOffice3D({
     return () => {
       window.clearInterval(timer);
     };
-  }, [renderAgentsRef]);
+  }, [renderAgentsRef, officeTheme]);
   const activeMonitor = monitorAgentId
     ? (monitorByAgentId[monitorAgentId] ?? null)
     : null;
@@ -3452,8 +3533,8 @@ export function RetroOffice3D({
             isError:
               renderAgent?.status === "error" || agent.status === "error",
             working:
-              renderAgent?.state === "sitting" ||
-              renderAgent?.state === "dancing" ||
+              (officeTheme !== "dellanio-house" && (renderAgent?.state === "sitting" ||
+              renderAgent?.state === "dancing")) ||
               renderAgent?.status === "working" ||
               agent.status === "working",
           };
@@ -3461,7 +3542,7 @@ export function RetroOffice3D({
         },
         {},
       ),
-    [agents, renderAgentUiById],
+    [agents, renderAgentUiById, officeTheme],
   );
   const hoveredAgent = useMemo(
     () =>
@@ -5199,10 +5280,8 @@ export function RetroOffice3D({
       }
       if (
         item.type === "round_table" &&
-        item.x >= 0 &&
-        item.x <= 290 &&
-        item.y >= 0 &&
-        item.y <= 235
+        ((officeTheme === "dellanio-house" && item.id === "house-standup-table") ||
+        (item.x >= 0 && item.x <= 290 && item.y >= 0 && item.y <= 235))
       ) {
         onStandupStartRequested?.();
         return;
@@ -5231,6 +5310,7 @@ export function RetroOffice3D({
       openKanbanBoard,
       onMonitorSelect,
       onStandupStartRequested,
+      officeTheme,
       qaTerminal,
       resolveAgentIdForDeskItem,
       planPath,
@@ -5852,7 +5932,7 @@ export function RetroOffice3D({
             {/* Sky, image-based lighting, sun rig, fog and daylight drift. */}
             <SceneAtmosphere
               config={graphicsQualityConfig}
-              remoteOfficeEnabled={remoteOfficeEnabled}
+              remoteOfficeEnabled={remoteOfficeEnabled || officeTheme === "dellanio-house"}
             />
 
             {/* Post-processing: AO, bloom, vignette, filmic tone mapping. */}
@@ -5863,14 +5943,14 @@ export function RetroOffice3D({
             />
 
             {/* Floor + walls — always visible, no async loading. */}
-            <SceneFloorAndWalls showRemoteOffice={remoteOfficeEnabled} />
+            {officeTheme === "dellanio-house" ? <HouseScene furniture={furniture} nationalFlag={nationalFlag} /> : <SceneFloorAndWalls showRemoteOffice={remoteOfficeEnabled} /> }
 
             {/* Wall pictures — procedural, no async loading. */}
-            <SceneWallPictures showRemoteOffice={remoteOfficeEnabled} />
+            {officeTheme !== "dellanio-house" && <SceneWallPictures showRemoteOffice={remoteOfficeEnabled} nationalFlag={nationalFlag} />}
 
             {/* Furniture models — each loads its GLB asynchronously. */}
             <Suspense fallback={null}>
-              {!editMode ? (
+              {!editMode && officeTheme !== "dellanio-house" ? (
                 <PrimitiveInstancedWallSegmentsModel items={wallItems} />
               ) : null}
               {!editMode ? (
@@ -5887,7 +5967,7 @@ export function RetroOffice3D({
                 />
               ) : null}
               {furniture.map((item) =>
-                item.type === "wall" ? (
+                item.type === "house_shrub" ? null : item.type === "wall" ? (
                   editMode ? (
                     <PrimitiveWallSegmentModel
                       key={item._uid}
@@ -6305,6 +6385,7 @@ export function RetroOffice3D({
               const isJanitor = "role" in agent && agent.role === "janitor";
               return (
                 <AgentObjectModel
+                  statusOnly={officeTheme === "dellanio-house"}
                   key={agent.id}
                   agentId={agent.id}
                   name={agent.name}
@@ -6517,6 +6598,8 @@ export function RetroOffice3D({
       {!readOnly && !immersiveOverlayActive ? (
         <div
           className="absolute top-10 left-1/2 z-20 -translate-x-1/2"
+          data-office-theme={officeTheme}
+          data-office-agents={officeTheme === "dellanio-house" ? JSON.stringify(renderAgentUiById) : undefined}
           data-conversation-groups={conversationGroups
             .map((group) => group.id)
             .join("|")}
@@ -6529,6 +6612,7 @@ export function RetroOffice3D({
             .sort()
             .join("|")}
         >
+          {officeTheme === "dellanio-house" && <div className="mb-2 rounded bg-slate-950/90 px-3 py-1 text-xs text-slate-300" aria-label="Agent status legend">Green: Working · Gray: Idle / Offline · Red: Error</div>}
           <div className="flex items-center gap-2 rounded-full border border-amber-900/25 bg-[#1c1610]/92 px-2 py-2 shadow-lg backdrop-blur-sm">
             <div className="flex items-center -space-x-1.5">
               {compactRosterAgents.map((agent) => {
@@ -6541,7 +6625,7 @@ export function RetroOffice3D({
                   ? "bg-red-400"
                   : working
                     ? "bg-green-400"
-                    : "bg-yellow-400";
+                    : (officeTheme === "dellanio-house" ? "bg-slate-400" : "bg-yellow-400");
                 return (
                   <button
                     key={agent.id}
@@ -6634,7 +6718,7 @@ export function RetroOffice3D({
                     ? "bg-red-400"
                     : working
                       ? "bg-green-400"
-                      : "bg-yellow-400";
+                      : (officeTheme === "dellanio-house" ? "bg-slate-400" : "bg-yellow-400");
                   const runCount = runCountByAgentId[agent.id] ?? 0;
                   return (
                     <div
@@ -6763,7 +6847,7 @@ export function RetroOffice3D({
                         ? "bg-red-400"
                         : working
                           ? "bg-green-400"
-                          : "bg-yellow-400"
+                          : (officeTheme === "dellanio-house" ? "bg-slate-400" : "bg-yellow-400")
                     }`}
                   />
                 </div>
@@ -7704,6 +7788,10 @@ export function RetroOffice3D({
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto">
               <SettingsPanel
+                nationalFlag={nationalFlag}
+                onNationalFlagChange={onNationalFlagChange}
+                officeTheme={officeTheme}
+                onOfficeThemeChange={onOfficeThemeChange}
                 graphicsQuality={graphicsQuality}
                 onGraphicsQualityChange={setGraphicsQuality}
                 renderMode={renderMode}

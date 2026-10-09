@@ -13,6 +13,10 @@ import {
 } from "@/features/office/renderMode";
 
 type SettingsPanelProps = {
+  nationalFlag?: "us" | "br";
+  onNationalFlagChange?: (flag: "us" | "br") => void;
+  officeTheme?: "original" | "dellanio-house";
+  onOfficeThemeChange?: (theme:"original" | "dellanio-house")=>void;
   gatewayStatus?: string;
   gatewayUrl?: string;
   gatewayToken?: string;
@@ -54,6 +58,10 @@ type SettingsPanelProps = {
 };
 
 export function SettingsPanel({
+  nationalFlag = "us",
+  onNationalFlagChange,
+  officeTheme = "original",
+  onOfficeThemeChange,
   gatewayStatus,
   gatewayUrl,
   gatewayToken,
@@ -111,6 +119,23 @@ export function SettingsPanel({
 
   return (
     <div className="px-4 py-4">
+      <div className="mb-3 rounded-lg border border-cyan-500/20 bg-black/20 p-4">
+        <label htmlFor="office-theme" className="text-sm text-white">Office theme</label>
+        <select id="office-theme" aria-label="Office theme" value={officeTheme}
+          onChange={event=>onOfficeThemeChange?.(event.target.value as "original" | "dellanio-house")}
+          className="mt-2 w-full rounded bg-slate-900 p-2 text-sm text-white">
+          <option value="original">Original Office</option>
+          <option value="dellanio-house">Dellanio&apos;s House</option>
+        </select>
+        <label htmlFor="national-flag" className="mt-3 block text-sm text-white">National flag</label>
+        <select id="national-flag" aria-label="National flag" value={nationalFlag}
+          onChange={event => onNationalFlagChange?.(event.target.value as "us" | "br")}
+          className="mt-2 w-full rounded bg-slate-900 p-2 text-sm text-white">
+          <option value="us">United States</option>
+          <option value="br">Brazil</option>
+        </select>
+        <p className="mt-2 text-xs text-white/60">House theme: a 12-desk dev studio, lounge and games, gym, and garden with pool. Idle agents move between leisure activities; working agents return to their own computers. Desk capacity grows with the roster. Original Office keeps its saved furniture and classic behavior.</p>
+      </div>
       <div className="rounded-lg border border-cyan-500/10 bg-black/20 px-4 py-3">
         <div className="flex items-start justify-between gap-3">
           <div>

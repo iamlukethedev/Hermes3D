@@ -1156,6 +1156,10 @@ export function OfficeScreen({
   }, []);
   const {
     loaded: officeTitleLoaded,
+    nationalFlag,
+    setNationalFlag,
+    theme: officeTheme,
+    setTheme: setOfficeTheme,
     title: officeTitle,
     remoteOfficeEnabled,
     remoteOfficeSourceKind,
@@ -4578,8 +4582,13 @@ export function OfficeScreen({
         />
         ) : (
         <RetroOffice3D
+                  key={`${activeFloor.id}:${officeTheme}`}
+                  nationalFlag={nationalFlag}
+                  onNationalFlagChange={setNationalFlag}
+                  officeTheme={officeTheme}
+          onOfficeThemeChange={setOfficeTheme}
           agents={allVisibleAgents}
-          storageNamespace={activeFloor.id}
+          storageNamespace={officeTheme === 'dellanio-house' ? `${activeFloor.id}:dellanio-house` : activeFloor.id}
           layoutPreset="office"
           officeCenterSignal={officeCameraCenterSignal}
           animationState={officeAnimationState}

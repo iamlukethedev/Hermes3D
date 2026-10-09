@@ -28,6 +28,8 @@ export type InteractiveFurnitureModelProps = {
 };
 
 export type AgentModelProps = {
+  /** House badges report runtime activity, not leisure animation. */
+  statusOnly?: boolean;
   agentId: string;
   name: string;
   subtitle?: string | null;

@@ -68,7 +68,7 @@ function FramedPicture({
   );
 }
 
-function UsaFlagArt() {
+export function UsaFlagArt() {
   const flagWidth = 0.52;
   const flagHeight = 0.3;
   const stripeHeight = flagHeight / 13;
@@ -118,15 +118,15 @@ function UsaFlagArt() {
   );
 }
 
-function BrazilFlagArt() {
+export function BrazilFlagArt() {
   return (
     <>
       <mesh position={[0, 0, 0]}>
         <planeGeometry args={[0.52, 0.3]} />
         <meshBasicMaterial color="#009b3a" side={2} />
       </mesh>
-      <mesh position={[0, 0, 0.001]} rotation={[0, 0, Math.PI / 4]}>
-        <planeGeometry args={[0.25, 0.25]} />
+      <mesh position={[0, 0, 0.001]} scale={[0.21, 0.12, 1]}>
+        <circleGeometry args={[1, 4]} />
         <meshBasicMaterial color="#ffdf00" side={2} />
       </mesh>
       <mesh position={[0, 0, 0.002]}>
@@ -780,7 +780,9 @@ export const FloorAndWalls = memo(function FloorAndWalls({
 
 export const WallPictures = memo(function WallPictures({
   showRemoteOffice = true,
+  nationalFlag = "us",
 }: {
+  nationalFlag?: "us" | "br";
   showRemoteOffice?: boolean;
 }) {
   const localWidth = LOCAL_OFFICE_CANVAS_WIDTH * SCALE;
@@ -814,7 +816,7 @@ export const WallPictures = memo(function WallPictures({
       <OfficeFlagPole
         position={localFlagPolePosition}
         rotY={0.32}
-        art={<UsaFlagArt />}
+        art={nationalFlag === "br" ? <BrazilFlagArt /> : <UsaFlagArt />}
       />
       {showRemoteOffice ? (
         <OfficeFlagPole
