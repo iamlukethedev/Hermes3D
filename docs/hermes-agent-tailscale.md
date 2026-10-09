@@ -205,6 +205,14 @@ install. Moving a card writes the matching status back to Hermes (dragging
 toward **Working** queues the task as `ready`; the dispatcher is the only
 thing allowed to mark it `running`).
 
+Agents working kanban cards show up as working, too. Kanban workers run
+outside the JSON-RPC gateway, so Studio polls the backend's active-worker list
+(`/api/plugins/kanban/workers/active`) across every board with a running card,
+every 15 seconds. Each worker run turns its profile's character to **working**
+for as long as the run lasts, with a speech bubble naming the card. Set
+`HERMES3D_KANBAN_ACTIVITY_INTERVAL_MS` to change the interval, or to `0` to turn
+it off. It only reads; it never changes a card.
+
 ---
 
 ## Troubleshooting

@@ -26,6 +26,10 @@ const {
   toKanbanPatchBody,
   kanbanRequest,
 } = require("./kanban");
+const {
+  createKanbanActivityWatcher,
+  resolveKanbanActivityIntervalMs,
+} = require("./kanban-activity");
 
 /** Mirrors the numeric WebSocket readyState constants the proxy compares against. */
 const CONNECTING = 0;
@@ -217,6 +221,7 @@ function createHermesAgentUpstream(options) {
     url,
     token,
     handshakeTimeoutMs,
+    kanbanActivityIntervalMs = resolveKanbanActivityIntervalMs(),
     log = () => {},
     logError = () => {},
   } = options || {};
@@ -252,6 +257,8 @@ function createHermesAgentUpstream(options) {
   let defaultAgentId = AGENT_ID;
   /** Optional feed of turns driven from other clients; see ./office-speech.js. */
   let officeSpeech = null;
+  /** Kanban worker runs shown as agent activity; see ./kanban-activity.js. */
+  let kanbanActivity = null;
   /** runId -> { sessionKey, runtimeId, buffer, aborted } */
   const activeRuns = new Map();
   /** sessionKey -> runId, so session-scoped events find their run. */
@@ -519,10 +526,72 @@ function createHermesAgentUpstream(options) {
     });
   };
 
+  /**
+   * Kanban workers run outside this gateway, so their work is invisible to the
+   * office unless it is replayed here. Each worker run becomes an agent run:
+   * a lifecycle start when the dispatcher spawns it, a lifecycle end when it
+   * finishes, plus one speech bubble naming the card.
+   */
+  const kanbanSessionKey = (activity) => `agent:${activity.agentId}:${activity.key}`;
+
+  const emitKanbanLifecycle = (activity, phase) => {
+    emitEvent("agent", {
+      runId: activity.key,
+      sessionKey: kanbanSessionKey(activity),
+      stream: "lifecycle",
+      data: { phase, text: activity.title },
+    });
+  };
+
+  const startKanbanActivity = () => {
+    if (kanbanActivity || !(kanbanActivityIntervalMs > 0)) return;
+    kanbanActivity = createKanbanActivityWatcher({
+      intervalMs: kanbanActivityIntervalMs,
+      request: (path) =>
+        kanbanRequest({
+          wsUrl: url,
+          token,
+          useLoopbackHost: client.usedLoopbackHost,
+          method: "GET",
+          path,
+        }),
+      getKnownAgentIds: () => new Set(agentRoster.map((agent) => agent.id)),
+      onStart: (activity) => {
+        log(
+          `[kanban-activity] ${activity.agentId} started ${activity.taskId} on board ${activity.board}`,
+        );
+        emitKanbanLifecycle(activity, "start");
+        const agent = agentRoster.find((entry) => entry.id === activity.agentId);
+        emitEvent("office.speech", {
+          agentId: activity.agentId,
+          name: agent?.name || activity.agentId,
+          text: `Kanban: ${activity.title}`,
+          atMs: Date.now(),
+          sessionId: activity.key,
+        });
+      },
+      onEnd: (activity) => {
+        log(
+          `[kanban-activity] ${activity.agentId} finished ${activity.taskId} on board ${activity.board}`,
+        );
+        emitKanbanLifecycle(activity, "end");
+      },
+      onStillActive: (activity) => emitKanbanLifecycle(activity, "start"),
+      log,
+    });
+    kanbanActivity.start();
+  };
+
+  const stopKanbanActivity = () => {
+    kanbanActivity?.stop();
+    kanbanActivity = null;
+  };
+
   const handleConnect = async (id) => {
     await loadAgentRoster();
     // Only worth subscribing once the roster exists to map turns onto.
     startOfficeSpeech();
+    startKanbanActivity();
     const agents = agentRoster.map((a) => ({
       agentId: a.id,
       name: a.name,
@@ -975,6 +1044,7 @@ function createHermesAgentUpstream(options) {
     closed = true;
     upstream.readyState = CLOSED;
     stopOfficeSpeech();
+    stopKanbanActivity();
     client.close(code, reason);
   };
 
@@ -982,6 +1052,7 @@ function createHermesAgentUpstream(options) {
     closed = true;
     upstream.readyState = CLOSED;
     stopOfficeSpeech();
+    stopKanbanActivity();
     client.terminate();
   };
 
@@ -995,6 +1066,7 @@ function createHermesAgentUpstream(options) {
     closed = true;
     upstream.readyState = CLOSED;
     stopOfficeSpeech();
+    stopKanbanActivity();
     upstream.emit("close", code, Buffer.from(String(reason ?? "")));
   });
 
