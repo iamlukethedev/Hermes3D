@@ -123,7 +123,10 @@ const INITIAL_CONNECT_RETRY_DELAY_MS = 1_200;
 const CONTROL_UI_CLIENT_ID = "hermes3d-control-ui";
 
 const isAutoManagedAdapter = (adapterType: StudioGatewayAdapterType) =>
-  adapterType === "hermes" || adapterType === "hermes-agent" || adapterType === "demo";
+  adapterType === "hermes" ||
+  adapterType === "hermes-agent" ||
+  adapterType === "demo" ||
+  adapterType === "devin";
 
 export const resolveGatewayClientName = () => CONTROL_UI_CLIENT_ID;
 
@@ -133,6 +136,7 @@ export const resolveInitialGatewayAutoConnectDelayMs = (
   switch (adapterType) {
     case "hermes":
     case "demo":
+    case "devin":
       return INITIAL_AUTO_CONNECT_DELAY_MS;
     default:
       return 0;
@@ -146,6 +150,7 @@ export const resolveInitialGatewayConnectAttemptCount = (
   switch (adapterType) {
     case "hermes":
     case "demo":
+    case "devin":
       return 2;
     default:
       if (hasConnectedOnce) return 1;
@@ -171,6 +176,7 @@ const normalizeLocalGatewayDefaults = (value: unknown): StudioGatewaySettings | 
   const token = typeof raw.token === "string" ? raw.token.trim() : "";
   const adapterType =
     raw.adapterType === "demo" ||
+    raw.adapterType === "devin" ||
     raw.adapterType === "hermes" ||
     raw.adapterType === "hermes-agent" ||
     raw.adapterType === "local" ||
@@ -202,6 +208,7 @@ const normalizeGatewayProfilesPublic = (
     "hermes",
     "hermes-agent",
     "demo",
+    "devin",
     "local",
     "hermes3d",
     "custom",
@@ -957,6 +964,7 @@ export const useGatewayConnection = (
       const hello = client.getLastHello();
       const nextDetectedAdapterType =
         hello?.adapterType === "demo" ||
+        hello?.adapterType === "devin" ||
         hello?.adapterType === "hermes" ||
         hello?.adapterType === "hermes-agent" ||
         hello?.adapterType === "custom"

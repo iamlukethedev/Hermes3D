@@ -35,6 +35,7 @@ export type StudioGatewayAdapterType =
   | "hermes"
   | "hermes-agent"
   | "demo"
+  | "devin"
   | "local"
   | "hermes3d"
   | "custom";
@@ -42,6 +43,7 @@ export const STUDIO_GATEWAY_ADAPTER_TYPES = [
   "hermes",
   "hermes-agent",
   "demo",
+  "devin",
   "local",
   "hermes3d",
   "custom",
@@ -282,6 +284,7 @@ export type StudioSettingsPatch = {
 
 const SETTINGS_VERSION = 1 as const;
 const DEFAULT_LOCAL_ADAPTER_GATEWAY_URL = "ws://localhost:18789";
+const DEFAULT_DEVIN_GATEWAY_URL = "ws://localhost:18790";
 /** A hermes-agent backend started with `hermes serve` on its default port. */
 const DEFAULT_HERMES_AGENT_URL = "http://localhost:9119";
 const DEFAULT_LOCAL_RUNTIME_URL = "http://localhost:7770";
@@ -829,6 +832,7 @@ const normalizeGatewayProfiles = (
   for (const adapterType of [
     "hermes",
     "demo",
+    "devin",
     "local",
     "hermes3d",
     "custom",
@@ -895,6 +899,7 @@ const mergeGatewayProfiles = (
   for (const adapterType of [
     "hermes",
     "demo",
+    "devin",
     "local",
     "hermes3d",
     "custom",
@@ -950,6 +955,7 @@ const normalizeGatewayAdapterType = (
   const adapterType = coerceString(value).toLowerCase();
   if (
     adapterType === "demo" ||
+    adapterType === "devin" ||
     adapterType === "hermes" ||
     adapterType === "hermes-agent" ||
     adapterType === "local" ||
@@ -981,6 +987,8 @@ export const resolveDefaultStudioGatewayProfile = (
   }
 
   switch (adapterType) {
+    case "devin":
+      return { url: DEFAULT_DEVIN_GATEWAY_URL, token: "" };
     case "hermes-agent":
       return { url: DEFAULT_HERMES_AGENT_URL, token: "" };
     case "hermes3d":

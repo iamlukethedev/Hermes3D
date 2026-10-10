@@ -1,0 +1,31 @@
+# Hermes3D Devin Gateway — WebSocket adapter that bridges Hermes3D Studio to the
+# Devin v3 API. Runs standalone; Hermes3D Studio connects to it over WebSocket.
+#
+# Build:  docker build -f Dockerfile.devin-gateway -t hermes3d-devin-gateway .
+# Run:    docker run --rm -p 18790:18790 \
+#           -e DEVIN_API_KEY=cog_... -e DEVIN_ORG_ID=org-... \
+#           -v hermes3d-devin-state:/state \
+#           -e HERMES_STATE_DIR=/state \
+#           hermes3d-devin-gateway
+
+FROM node:22-slim
+WORKDIR /app
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+
+# Only the `ws` package is needed at runtime.
+COPY package.json package-lock.json ./
+RUN npm ci --ignore-scripts --omit=dev
+
+COPY server/devin-gateway-adapter.js ./server/devin-gateway-adapter.js
+
+ENV DEVIN_GATEWAY_HOST=0.0.0.0
+ENV DEVIN_GATEWAY_PORT=18790
+ENV DEVIN_API_BASE_URL=https://api.devin.ai/v3
+ENV DEVIN_SYNC_INTERVAL_MS=10000
+ENV HERMES_STATE_DIR=/state
+VOLUME /state
+
+EXPOSE 18790
+
+CMD ["node", "server/devin-gateway-adapter.js"]

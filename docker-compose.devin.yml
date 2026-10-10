@@ -1,0 +1,44 @@
+# Hermes3D + Devin Gateway
+#
+#   docker compose -f docker-compose.devin.yml up --build
+#
+# Then open http://localhost:3000, pick the "Devin backend" preset and connect
+# to ws://localhost:18790 (via the same-origin proxy the Studio resolves it
+# automatically when DEVIN is the selected adapter).
+#
+# Secrets are read from your shell environment or a local .env file that
+# docker-compose loads automatically. Never bake DEVIN_API_KEY into the image.
+
+services:
+  studio:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      HERMES3D_GATEWAY_URL: ws://devin-gateway:18790
+    depends_on:
+      - devin-gateway
+
+  devin-gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile.devin-gateway
+    ports:
+      - "18790:18790"
+    environment:
+      DEVIN_API_KEY: ${DEVIN_API_KEY:?Set DEVIN_API_KEY in the environment or .env}
+      DEVIN_ORG_ID: ${DEVIN_ORG_ID:?Set DEVIN_ORG_ID in the environment or .env}
+      DEVIN_API_BASE_URL: ${DEVIN_API_BASE_URL:-https://api.devin.ai/v3}
+      DEVIN_SYNC_INTERVAL_MS: ${DEVIN_SYNC_INTERVAL_MS:-10000}
+      DEVIN_ALLOWED_REPOS: ${DEVIN_ALLOWED_REPOS:-}
+      DEVIN_DEFAULT_REPOS: ${DEVIN_DEFAULT_REPOS:-}
+      DEVIN_DEFAULT_MODE: ${DEVIN_DEFAULT_MODE:-}
+      DEVIN_MAX_ACU_LIMIT: ${DEVIN_MAX_ACU_LIMIT:-}
+      HERMES_STATE_DIR: /state
+    volumes:
+      - devin-gateway-state:/state
+
+volumes:
+  devin-gateway-state:

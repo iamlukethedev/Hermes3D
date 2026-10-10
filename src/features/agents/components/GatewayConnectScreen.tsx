@@ -58,6 +58,7 @@ export const GatewayConnectScreen = ({
   const tokenOptional =
     selectedAdapterType === "hermes" ||
     selectedAdapterType === "demo" ||
+    selectedAdapterType === "devin" ||
     selectedAdapterType === "local" ||
     selectedAdapterType === "hermes3d" ||
     selectedAdapterType === "custom";
@@ -81,6 +82,9 @@ export const GatewayConnectScreen = ({
   );
   const useDemoPreset = () => {
     onAdapterTypeChange("demo");
+  };
+  const useDevinPreset = () => {
+    onAdapterTypeChange("devin");
   };
   const useHermesPreset = () => {
     onAdapterTypeChange("hermes");
@@ -117,6 +121,8 @@ export const GatewayConnectScreen = ({
         return "Hermes Agent connects straight to a hermes-agent backend's JSON-RPC gateway — no adapter process. Point it at the server root (Studio appends /api/ws) and use the session token, not a dashboard login.";
       case "demo":
         return "Demo can fall back to a seeded main agent locally, or connect to the bundled mock gateway for streaming replies.";
+      case "devin":
+        return "Devin connects to the bundled Devin gateway adapter, which drives real Devin cloud sessions. Run `npm run devin-gateway` with DEVIN_API_KEY and DEVIN_ORG_ID set.";
       case "local":
         return "Local runtime expects a direct HTTP runtime/orchestrator boundary, not a provider catalog.";
       case "hermes3d":
@@ -341,6 +347,13 @@ export const GatewayConnectScreen = ({
               onClick={useHermesPreset}
             >
               Hermes backend
+            </button>
+            <button
+              type="button"
+              className="ui-btn-secondary px-3 py-1.5 text-[11px] font-semibold tracking-[0.05em]"
+              onClick={useDevinPreset}
+            >
+              Devin backend
             </button>
             <button
               type="button"

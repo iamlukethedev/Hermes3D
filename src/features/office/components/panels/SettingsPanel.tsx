@@ -104,6 +104,7 @@ export function SettingsPanel({
   const tokenOptional =
     selectedAdapterType === "hermes" ||
     selectedAdapterType === "demo" ||
+    selectedAdapterType === "devin" ||
     selectedAdapterType === "local" ||
     selectedAdapterType === "hermes3d" ||
     selectedAdapterType === "custom";
@@ -153,6 +154,7 @@ export function SettingsPanel({
             [
               ["demo", "Demo"],
               ["hermes", "Hermes"],
+              ["devin", "Devin"],
               ["local", "Local"],
               ["hermes3d", "Hermes3D"],
               ["custom", "Custom"],

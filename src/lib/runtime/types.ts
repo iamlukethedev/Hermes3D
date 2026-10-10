@@ -32,6 +32,7 @@ export type RuntimeCapability =
 export type RuntimeProviderId =
   | "hermes"
   | "demo"
+  | "devin"
   | "local"
   | "hermes3d"
   | "custom";

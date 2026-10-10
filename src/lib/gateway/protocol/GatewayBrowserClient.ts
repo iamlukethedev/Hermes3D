@@ -363,7 +363,7 @@ export type GatewayResponseFrame = {
 export type GatewayHelloOk = {
   type: "hello-ok";
   protocol: number;
-  adapterType?: "hermes" | "hermes-agent" | "demo" | "custom";
+  adapterType?: "hermes" | "hermes-agent" | "demo" | "devin" | "custom";
   features?: { methods?: string[]; events?: string[] };
   snapshot?: unknown;
   auth?: {

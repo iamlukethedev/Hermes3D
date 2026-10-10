@@ -186,6 +186,25 @@ ws://localhost:18789
 This starts a mock local gateway with demo agents, streaming chat, session previews, and office presence.
 In the connect screen, choose `Demo backend`, then connect.
 
+### Devin mode
+
+To run real Devin AI sessions as office agents, start the bundled Devin gateway
+adapter, which speaks the Hermes3D gateway protocol on one side and the Devin
+v3 API on the other:
+
+```bash
+export DEVIN_API_KEY="cog_..."    # service user credential (never NEXT_PUBLIC_*)
+export DEVIN_ORG_ID="org-..."
+npm run devin-gateway             # ws://localhost:18790
+npm run dev
+```
+
+In the connect screen, choose `Devin backend`, then connect. Sessions created
+from the office become real Devin sessions; the "Devin" sidebar tab shows
+status, results and pull-request links. See
+[`docs/devin-gateway.md`](docs/devin-gateway.md) for the full guide (PT-BR),
+Docker setup, state mapping, and known limitations.
+
 ## How It Connects
 
 Hermes3D uses two separate network hops:
@@ -256,7 +275,8 @@ Common environment variables:
 - `CUSTOM_RUNTIME_ALLOWLIST` restricts which hosts `/api/runtime/custom` may fetch. If unset, it falls back to `UPSTREAM_ALLOWLIST`.
 - `NEXT_PUBLIC_GATEWAY_URL` provides the default upstream gateway URL when Studio settings are empty. **Note:** this is a build-time variable — changes require `npm run build` to take effect.
 - `HERMES3D_GATEWAY_URL` and `HERMES3D_GATEWAY_TOKEN` provide a runtime alternative to `NEXT_PUBLIC_GATEWAY_URL` that takes effect on server restart without a rebuild.
-- `HERMES3D_GATEWAY_ADAPTER_TYPE` can pair with `HERMES3D_GATEWAY_URL` to mark those runtime defaults as `hermes`, `demo`, `local`, `hermes3d`, or `custom`.
+- `HERMES3D_GATEWAY_ADAPTER_TYPE` can pair with `HERMES3D_GATEWAY_URL` to mark those runtime defaults as `hermes`, `demo`, `local`, `hermes3d`, `devin`, or `custom`.
+- `DEVIN_API_KEY` and `DEVIN_ORG_ID` configure the Devin gateway adapter (`npm run devin-gateway`). The key stays in the adapter process and is never exposed to the browser. `DEVIN_GATEWAY_PORT`/`DEVIN_GATEWAY_HOST` set its bind address (default `ws://127.0.0.1:18790`); `DEVIN_SYNC_INTERVAL_MS` sets the session polling interval. See `.env.example` for the full list.
 - If `HERMES3D_GATEWAY_URL` is not set, Studio can still surface local Hermes or demo adapter defaults from `HERMES_ADAPTER_PORT` / `DEMO_ADAPTER_PORT`.
 - `HERMES_API_URL` points the gateway adapter at the Hermes HTTP API. It defaults to `http://localhost:8642`.
 - Hermes file defaults come from `~/.hermes/hermes.json` when present.
@@ -271,6 +291,7 @@ See [`.env.example`](.env.example) for the full local development template.
 - `npm run dev` starts the Studio dev server.
 - `npm run hermes-adapter` starts the Hermes WebSocket adapter.
 - `npm run demo-gateway` starts the built-in mock gateway for demo mode.
+- `npm run devin-gateway` starts the Devin WebSocket adapter (requires `DEVIN_API_KEY` + `DEVIN_ORG_ID`).
 - `npm run build` builds the production Next.js app.
 - `npm run start` starts the production server.
 - `npm run lint` runs ESLint.
@@ -296,6 +317,7 @@ See [`.env.example`](.env.example) for the full local development template.
 - [`docs/pi-chat-streaming.md`](docs/pi-chat-streaming.md): gateway runtime streaming and transcript rendering.
 - [`docs/permissions-sandboxing.md`](docs/permissions-sandboxing.md): Studio permissions and gateway-side sandbox behavior.
 - [`docs/hermes-gateway.md`](docs/hermes-gateway.md): Hermes adapter setup, capabilities, and current limitations.
+- [`docs/devin-gateway.md`](docs/devin-gateway.md): Devin gateway setup, state mapping, security model, and limitations (PT-BR).
 
 ## Current Limitations
 

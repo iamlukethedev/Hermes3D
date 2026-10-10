@@ -75,6 +75,7 @@ const normalizeAdapterType = (value: string | undefined): StudioGatewayAdapterTy
     normalized === "hermes" ||
     normalized === "hermes-agent" ||
     normalized === "demo" ||
+    normalized === "devin" ||
     normalized === "local" ||
     normalized === "hermes3d" ||
     normalized === "custom"
@@ -85,8 +86,8 @@ const normalizeAdapterType = (value: string | undefined): StudioGatewayAdapterTy
 };
 
 const readPortBasedGatewayProfile = (
-  adapterType: Extract<StudioGatewayAdapterType, "hermes" | "demo">,
-  envKey: "HERMES_ADAPTER_PORT" | "DEMO_ADAPTER_PORT"
+  adapterType: Extract<StudioGatewayAdapterType, "hermes" | "demo" | "devin">,
+  envKey: "HERMES_ADAPTER_PORT" | "DEMO_ADAPTER_PORT" | "DEVIN_GATEWAY_PORT"
 ): StudioGatewayProfile | null => {
   const rawPort = process.env[envKey]?.trim();
   if (!rawPort) return null;
@@ -103,10 +104,12 @@ const buildEnvGatewayDefaults = (): StudioGatewaySettings | null => {
 
   const hermesProfile = readPortBasedGatewayProfile("hermes", "HERMES_ADAPTER_PORT");
   const demoProfile = readPortBasedGatewayProfile("demo", "DEMO_ADAPTER_PORT");
+  const devinProfile = readPortBasedGatewayProfile("devin", "DEVIN_GATEWAY_PORT");
 
   const profiles: Partial<Record<StudioGatewayAdapterType, StudioGatewayProfile>> = {};
   if (hermesProfile) profiles.hermes = hermesProfile;
   if (demoProfile) profiles.demo = demoProfile;
+  if (devinProfile) profiles.devin = devinProfile;
 
   if (envUrl) {
     profiles[envAdapterType] = buildLocalProfile(envUrl, envToken);

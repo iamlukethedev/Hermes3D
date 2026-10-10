@@ -1,6 +1,7 @@
 import { CustomRuntimeProvider } from "@/lib/runtime/custom/provider";
 import type { GatewayClient } from "@/lib/gateway/GatewayClient";
 import { DemoRuntimeProvider } from "@/lib/runtime/demo/provider";
+import { DevinRuntimeProvider } from "@/lib/runtime/devin/provider";
 import { HermesRuntimeProvider } from "@/lib/runtime/hermes/provider";
 import type { RuntimeProvider } from "@/lib/runtime/types";
 import type { StudioGatewayAdapterType } from "@/lib/studio/settings";
@@ -34,6 +35,8 @@ export const createRuntimeProvider = (
       });
     case "demo":
       return new DemoRuntimeProvider(client);
+    case "devin":
+      return new DevinRuntimeProvider(client);
     case "hermes":
     default:
       return new HermesRuntimeProvider(client);
