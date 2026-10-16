@@ -269,6 +269,23 @@ function createHermesAgentUpstream(options) {
     emitFrame({ type: "event", event, seq: seq++, payload });
   };
 
+  // --- approvals (server→client requests) -----------------------------------
+
+  /** approvalId -> { srqId, choices } for `approval` requests awaiting an answer. */
+  const pendingApprovals = new Map();
+  /** server request id -> approvalId, so `request.cancel` can find its entry. */
+  const approvalIdBySrq = new Map();
+
+  /** Map a Studio decision onto a choice hermes-agent offered. */
+  const toHermesChoice = (decision, choices) => {
+    if (decision === "deny") return "deny";
+    if (decision === "allow-always") {
+      if (choices.includes("always")) return "always";
+      if (choices.includes("session")) return "session";
+    }
+    return "once";
+  };
+
   const emitChat = (runId, sessionKey, state, extra) => {
     emitEvent("chat", { runId, sessionKey, state, ...extra });
   };
@@ -447,6 +464,8 @@ function createHermesAgentUpstream(options) {
         return;
 
       case "approval.request":
+        // Legacy path (older hermes-agent). Newer versions send an `approval`
+        // server request instead, handled by the "server_request" listener.
         emitEvent("exec.approval.requested", {
           id: asString(payload?.request_id),
           request: { command: asString(payload?.command), cwd: asString(payload?.cwd) },
@@ -454,6 +473,21 @@ function createHermesAgentUpstream(options) {
           expiresAtMs: Date.now() + 120_000,
         });
         return;
+
+      case "request.cancel": {
+        // hermes-agent withdrew a server request (timeout, answered elsewhere…).
+        const approvalId = approvalIdBySrq.get(asString(payload?.id));
+        if (!approvalId) return;
+        approvalIdBySrq.delete(asString(payload?.id));
+        pendingApprovals.delete(approvalId);
+        emitEvent("exec.approval.resolved", {
+          id: approvalId,
+          decision: "deny",
+          resolvedBy: "hermes-agent",
+          ts: Date.now(),
+        });
+        return;
+      }
 
       case "error":
         if (!run) return;
@@ -863,13 +897,31 @@ function createHermesAgentUpstream(options) {
       case "exec.approval.resolve": {
         const requestId = asString(p.id);
         const decision = asString(p.decision, "deny");
+
+        // Preferred path: answer the pending `approval` server request.
+        const pending = pendingApprovals.get(requestId);
+        if (pending) {
+          pendingApprovals.delete(requestId);
+          approvalIdBySrq.delete(pending.srqId);
+          const choice = toHermesChoice(decision, pending.choices);
+          client.respond(pending.srqId, { choice });
+          emitEvent("exec.approval.resolved", {
+            id: requestId,
+            decision: choice === "deny" ? "deny" : decision === "allow-always" ? "allow-always" : "allow-once",
+            resolvedBy: "studio",
+            ts: Date.now(),
+          });
+          return resOk(id, { ok: true });
+        }
+
+        // Legacy path: older hermes-agent resolves via approval.respond.
         const runtimeId = [...sessions.values()][0]?.runtimeId;
         if (requestId && runtimeId) {
           try {
             await client.request("approval.respond", {
               session_id: runtimeId,
               request_id: requestId,
-              choice: decision === "allow" ? "once" : "deny",
+              choice: toHermesChoice(decision, ["once", "session", "always", "deny"]),
             });
           } catch (err) {
             log(`[hermes-agent] approval.respond failed: ${errorMessage(err)}`);
@@ -985,9 +1037,45 @@ function createHermesAgentUpstream(options) {
     client.terminate();
   };
 
+  client.on("server_request", (method, srqId, params) => {
+    if (method !== "approval") {
+      client.respondError(srqId, -32601, `Method not found: ${method}`);
+      return;
+    }
+    const runtimeSid = asString(params?.session_id);
+    const approvalId = asString(params?.request_id) || String(srqId);
+    const choices = Array.isArray(params?.choices) ? params.choices.map(String) : ["once", "deny"];
+    // File-edit approvals may not carry a shell command; fall back to the
+    // closest human-readable description so the Studio card has text.
+    const command =
+      asString(params?.command) ||
+      asString(params?.description) ||
+      asString(params?.pattern_key) ||
+      "Approval requested";
+    pendingApprovals.set(approvalId, { srqId, choices });
+    approvalIdBySrq.set(srqId, approvalId);
+    log(`[hermes-agent] approval requested (${approvalId}): ${command.slice(0, 120)}`);
+    emitEvent("exec.approval.requested", {
+      id: approvalId,
+      request: {
+        command,
+        cwd: asString(params?.cwd) || null,
+        sessionKey: sessionKeyByRuntimeId.get(runtimeSid) || null,
+      },
+      createdAtMs: Date.now(),
+      expiresAtMs: Date.now() + 300_000,
+    });
+  });
+
   client.on("ready", () => {
     upstream.readyState = OPEN;
     log(`[hermes-agent] JSON-RPC gateway ready at ${redactUrl(client.url)}`);
+    // Tell hermes-agent this client can answer server→client requests;
+    // without it, approvals are withdrawn ("the attached client cannot answer…").
+    client
+      .request("client.capabilities", { server_requests: true })
+      .then(() => log("[hermes-agent] advertised server_requests capability"))
+      .catch((err) => log(`[hermes-agent] client.capabilities failed: ${errorMessage(err)}`));
     upstream.emit("open");
   });
 

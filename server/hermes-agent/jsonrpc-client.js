@@ -230,6 +230,25 @@ class HermesAgentJsonRpcClient extends EventEmitter {
     }
     if (!frame || typeof frame !== "object") return;
 
+    // Server→client request (e.g. `approval`): carries both an id and a method.
+    // Newer hermes-agent only sends these to clients that advertised
+    // `client.capabilities {server_requests: true}`; the bridge answers them
+    // through respond()/respondError().
+    if (
+      typeof frame.method === "string" &&
+      frame.id !== undefined &&
+      frame.id !== null &&
+      frame.result === undefined &&
+      !frame.error
+    ) {
+      if (this.listenerCount("server_request") === 0) {
+        this.respondError(frame.id, -32601, `Method not found: ${frame.method}`);
+      } else {
+        this.emit("server_request", frame.method, frame.id, frame.params ?? {});
+      }
+      return;
+    }
+
     if (frame.id !== undefined && frame.id !== null) {
       const entry = this.pending.get(frame.id);
       if (!entry) return;
@@ -270,6 +289,20 @@ class HermesAgentJsonRpcClient extends EventEmitter {
       this.pending.set(id, { resolve, reject, timer });
       this.ws.send(JSON.stringify({ jsonrpc: "2.0", id, method, params }));
     });
+  }
+
+  /** Answer a server→client request with a result. */
+  respond(id, result = {}) {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return false;
+    this.ws.send(JSON.stringify({ jsonrpc: "2.0", id, result }));
+    return true;
+  }
+
+  /** Answer a server→client request with a JSON-RPC error. */
+  respondError(id, code, message) {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return false;
+    this.ws.send(JSON.stringify({ jsonrpc: "2.0", id, error: { code, message } }));
+    return true;
   }
 
   _failAllPending(err) {

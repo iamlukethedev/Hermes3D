@@ -45,6 +45,14 @@ import {
   executeStudioBootstrapLoadCommands,
 } from "@/features/agents/operations/studioBootstrapOperation";
 import { isGatewayDisconnectLikeError } from "@/lib/gateway/GatewayClient";
+import { resolveExecApprovalEventEffects } from "@/features/agents/approvals/execApprovalLifecycleWorkflow";
+import { applyApprovalIngressEffects } from "@/features/agents/approvals/execApprovalRuntimeCoordinator";
+import { resolveExecApprovalViaStudio } from "@/features/agents/approvals/execApprovalResolveOperation";
+import { mergePendingApprovalsForFocusedAgent } from "@/features/agents/approvals/pendingStore";
+import type {
+  ExecApprovalDecision,
+  PendingExecApproval,
+} from "@/features/agents/approvals/types";
 import { createGatewayRuntimeEventHandler } from "@/features/agents/state/gatewayRuntimeEventHandler";
 import {
   buildHistoryLines,
@@ -2835,11 +2843,101 @@ export function OfficeScreen({
     setMobilePaneChat: () => {},
   });
 
+  // --- exec approvals ---------------------------------------------------------
+  // hermes-agent asks before risky actions (e.g. editing a protected file). The
+  // gateway forwards that as `exec.approval.requested`; the card is rendered by
+  // AgentChatPanel and answered through `exec.approval.resolve`.
+  const [pendingExecApprovalsByAgentId, setPendingExecApprovalsByAgentId] =
+    useState<Record<string, PendingExecApproval[]>>({});
+  const [unscopedPendingExecApprovals, setUnscopedPendingExecApprovals] =
+    useState<PendingExecApproval[]>([]);
+  const pendingExecApprovalsByAgentIdRef = useRef(pendingExecApprovalsByAgentId);
+  const unscopedPendingExecApprovalsRef = useRef(unscopedPendingExecApprovals);
+
+  useEffect(() => {
+    return client.onEvent((event) => {
+      const approvalEffects = resolveExecApprovalEventEffects({
+        event,
+        agents: stateRef.current.agents,
+      });
+      if (!approvalEffects) return;
+      const { pendingState } = applyApprovalIngressEffects({
+        pendingState: {
+          approvalsByAgentId: pendingExecApprovalsByAgentIdRef.current,
+          unscopedApprovals: unscopedPendingExecApprovalsRef.current,
+        },
+        approvalEffects,
+        agents: stateRef.current.agents,
+        pausedRunIdByAgentId: new Map<string, string>(),
+      });
+      if (pendingState.approvalsByAgentId !== pendingExecApprovalsByAgentIdRef.current) {
+        pendingExecApprovalsByAgentIdRef.current = pendingState.approvalsByAgentId;
+        setPendingExecApprovalsByAgentId(pendingState.approvalsByAgentId);
+      }
+      if (pendingState.unscopedApprovals !== unscopedPendingExecApprovalsRef.current) {
+        unscopedPendingExecApprovalsRef.current = pendingState.unscopedApprovals;
+        setUnscopedPendingExecApprovals(pendingState.unscopedApprovals);
+      }
+    });
+  }, [client]);
+
+  useEffect(() => {
+    // Pending approvals live only in this page; a dropped connection orphans them.
+    if (status === "connected") return;
+    pendingExecApprovalsByAgentIdRef.current = {};
+    unscopedPendingExecApprovalsRef.current = [];
+    setPendingExecApprovalsByAgentId({});
+    setUnscopedPendingExecApprovals([]);
+  }, [status]);
+
+  const handleResolveExecApproval = useCallback(
+    async (approvalId: string, decision: ExecApprovalDecision) => {
+      await resolveExecApprovalViaStudio({
+        client,
+        approvalId,
+        decision,
+        getAgents: () => stateRef.current.agents,
+        getLatestAgent: (agentId) =>
+          stateRef.current.agents.find((agent) => agent.agentId === agentId) ?? null,
+        getPendingState: () => ({
+          approvalsByAgentId: pendingExecApprovalsByAgentIdRef.current,
+          unscopedApprovals: unscopedPendingExecApprovalsRef.current,
+        }),
+        setPendingExecApprovalsByAgentId: (next) => {
+          setPendingExecApprovalsByAgentId((current) => {
+            const resolved = typeof next === "function" ? next(current) : next;
+            pendingExecApprovalsByAgentIdRef.current = resolved;
+            return resolved;
+          });
+        },
+        setUnscopedPendingExecApprovals: (next) => {
+          setUnscopedPendingExecApprovals((current) => {
+            const resolved = typeof next === "function" ? next(current) : next;
+            unscopedPendingExecApprovalsRef.current = resolved;
+            return resolved;
+          });
+        },
+        requestHistoryRefresh: () => {},
+        isDisconnectLikeError: isGatewayDisconnectLikeError,
+        logWarn: (message, error) => console.warn(message, error),
+      });
+    },
+    [client],
+  );
+
   const focusedChatAgent = selectedChatAgentId
     ? (state.agents.find((agent) => agent.agentId === selectedChatAgentId) ??
       null)
     : null;
   const selectedLocalChatAgentId = focusedChatAgent?.agentId ?? null;
+  const focusedPendingExecApprovals = useMemo(() => {
+    const focusedAgentId = focusedChatAgent?.agentId ?? "";
+    if (!focusedAgentId) return unscopedPendingExecApprovals;
+    return mergePendingApprovalsForFocusedAgent({
+      scopedApprovals: pendingExecApprovalsByAgentId[focusedAgentId] ?? [],
+      unscopedApprovals: unscopedPendingExecApprovals,
+    });
+  }, [focusedChatAgent?.agentId, pendingExecApprovalsByAgentId, unscopedPendingExecApprovals]);
   const agentEditorAgent = agentEditorAgentId
     ? (state.agents.find((agent) => agent.agentId === agentEditorAgentId) ?? null)
     : null;
@@ -5323,6 +5421,10 @@ export function OfficeScreen({
                   agent={focusedChatAgent}
                   isSelected={false}
                   canSend={status === "connected"}
+                  pendingExecApprovals={focusedPendingExecApprovals}
+                  onResolveExecApproval={(approvalId, decision) => {
+                    void handleResolveExecApproval(approvalId, decision);
+                  }}
                   models={gatewayModels}
                   stopBusy={
                     chatController.stopBusyAgentId === focusedChatAgent.agentId
