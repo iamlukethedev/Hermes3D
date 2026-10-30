@@ -4995,12 +4995,12 @@ export function OfficeScreen({
       ) : null}
 
       {showHermesConsole ? (
-        <section className="pointer-events-auto fixed bottom-3 left-3 z-30 flex w-[520px] max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded border border-cyan-500/25 bg-black/78 shadow-2xl backdrop-blur">
-          <div className="flex items-center justify-between border-b border-cyan-500/15 px-3 py-2 font-mono text-[11px] uppercase tracking-[0.18em] text-cyan-200/80">
-            <span>Agent Event Console</span>
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] text-cyan-100/45">
-                agents {state.agents.length} | events{" "}
+        <section className="pointer-events-auto fixed bottom-2 left-2 right-2 z-30 flex max-h-[34dvh] w-auto flex-col overflow-hidden rounded-xl border-2 border-black bg-[#fff8e7]/95 text-black shadow-[5px_5px_0_#000] backdrop-blur sm:bottom-3 sm:left-3 sm:right-auto sm:max-h-[42dvh] sm:w-[520px]">
+          <div className="flex flex-col items-stretch gap-2 border-b-2 border-black bg-[#00f5ff] px-2 py-2 font-mono text-[10px] font-black uppercase tracking-[0.08em] text-black sm:flex-row sm:items-center sm:justify-between sm:px-3 sm:text-[11px] sm:tracking-[0.12em]">
+            <span>Konsol Aktivitas Agen</span>
+            <div className="grid grid-cols-2 items-center gap-1.5 sm:flex sm:flex-wrap sm:justify-end">
+              <span className="col-span-2 text-[9px] font-bold text-black/70 sm:col-span-1 sm:text-[10px]">
+                agen {state.agents.length} | aktivitas{" "}
                 {filteredHermesLogEntries.length}/{hermesLogEntries.length}
               </span>
               <button
@@ -5008,42 +5008,42 @@ export function OfficeScreen({
                 onClick={() => {
                   void handleCopyHermesConsoleJson();
                 }}
-                className="rounded border border-cyan-500/20 px-2 py-0.5 text-[9px] text-cyan-100/70 transition-colors hover:border-cyan-400/45 hover:text-cyan-50"
+                className="rounded border-2 border-black bg-[#ff4fd8] px-2 py-1 text-[9px] font-black text-black shadow-[2px_2px_0_#000] transition-transform hover:-translate-y-0.5"
               >
                 {hermesConsoleCopyStatus === "copied"
                   ? "Copied"
                   : hermesConsoleCopyStatus === "error"
-                    ? "Copy Failed"
-                    : "Copy JSON"}
+                    ? "Gagal Menyalin"
+                    : "Salin JSON"}
               </button>
               <button
                 type="button"
                 onClick={handleDownloadHermesConsoleJson}
-                className="rounded border border-cyan-500/20 px-2 py-0.5 text-[9px] text-cyan-100/70 transition-colors hover:border-cyan-400/45 hover:text-cyan-50"
+                className="rounded border-2 border-black bg-[#ff4fd8] px-2 py-1 text-[9px] font-black text-black shadow-[2px_2px_0_#000] transition-transform hover:-translate-y-0.5"
               >
-                Download JSON
+                Unduh JSON
               </button>
               <button
                 type="button"
                 onClick={handleClearHermesConsole}
-                className="rounded border border-cyan-500/20 px-2 py-0.5 text-[9px] text-cyan-100/70 transition-colors hover:border-cyan-400/45 hover:text-cyan-50"
+                className="rounded border-2 border-black bg-[#ff4fd8] px-2 py-1 text-[9px] font-black text-black shadow-[2px_2px_0_#000] transition-transform hover:-translate-y-0.5"
               >
-                Clear
+                Bersihkan
               </button>
               <button
                 type="button"
                 onClick={() =>
                   setHermesConsoleCollapsed((previous) => !previous)
                 }
-                className="rounded border border-cyan-500/20 px-2 py-0.5 text-[9px] text-cyan-100/70 transition-colors hover:border-cyan-400/45 hover:text-cyan-50"
+                className="rounded border-2 border-black bg-[#ff4fd8] px-2 py-1 text-[9px] font-black text-black shadow-[2px_2px_0_#000] transition-transform hover:-translate-y-0.5"
               >
-                {hermesConsoleCollapsed ? "Expand" : "Minimize"}
+                {hermesConsoleCollapsed ? "Perluas" : "Perkecil"}
               </button>
             </div>
           </div>
           {!hermesConsoleCollapsed ? (
-            <div className="flex h-[320px] flex-col gap-3 overflow-y-auto bg-[#02090b]/96 px-3 py-2 font-mono text-[10px] leading-4">
-            <div className="rounded border border-cyan-500/10 bg-cyan-950/10 p-2">
+            <div className="flex min-h-0 max-h-[28dvh] flex-col gap-3 overflow-y-auto bg-[#fff8e7] px-2 py-2 font-mono text-[10px] leading-4 text-black sm:h-[320px] sm:max-h-none sm:px-3">
+            <div className="rounded-lg border-2 border-black bg-white p-2 shadow-[2px_2px_0_#000]">
               <div className="flex items-center gap-2">
                 <input
                   type="text"
@@ -5051,14 +5051,14 @@ export function OfficeScreen({
                   onChange={(event) =>
                     setHermesConsoleSearch(event.target.value)
                   }
-                  placeholder="Search logs, payloads, thinking, user text."
-                  className="min-w-0 flex-1 rounded border border-cyan-500/20 bg-black/35 px-2 py-1 text-[10px] normal-case tracking-normal text-cyan-50 placeholder:text-cyan-100/30 focus:border-cyan-400/40 focus:outline-none"
+                  placeholder="Cari log, data, proses, atau pesan..."
+                  className="min-w-0 flex-1 rounded border-2 border-black bg-white px-2 py-2 text-[10px] normal-case tracking-normal text-black placeholder:text-black/45 focus:outline-none"
                 />
                 {hermesConsoleSearch ? (
                   <button
                     type="button"
                     onClick={() => setHermesConsoleSearch("")}
-                    className="rounded border border-cyan-500/20 px-2 py-1 text-[9px] uppercase tracking-[0.16em] text-cyan-100/70 transition-colors hover:border-cyan-400/45 hover:text-cyan-50"
+                    className="rounded border-2 border-black bg-[#00f5ff] px-2 py-1 text-[9px] font-black uppercase tracking-[0.08em] text-black shadow-[2px_2px_0_#000]"
                   >
                     Reset
                   </button>
@@ -5066,7 +5066,7 @@ export function OfficeScreen({
               </div>
             </div>
             {hermesLiveStateMatchesSearch ? (
-              <div className="rounded border border-cyan-500/10 bg-cyan-950/10 p-2">
+              <div className="rounded-lg border-2 border-black bg-white p-2 shadow-[2px_2px_0_#000]">
                 <div className="mb-1 text-[9px] uppercase tracking-[0.16em] text-cyan-300/70">
                   Live Hermes State
                 </div>
@@ -5088,8 +5088,8 @@ export function OfficeScreen({
             {filteredHermesLogEntries.length === 0 ? (
               <div className="rounded border border-cyan-500/10 bg-cyan-950/10 p-2 text-cyan-100/45">
                 {hermesLogEntries.length === 0
-                  ? "No Hermes gateway events received yet."
-                  : "No Hermes events match the current search."}
+                  ? "Belum ada aktivitas dari gateway Hermes."
+                  : "Tidak ada aktivitas Hermes yang cocok dengan pencarian ini."}
               </div>
             ) : (
               filteredHermesLogEntries.map((entry) => {
@@ -5207,7 +5207,7 @@ export function OfficeScreen({
       ) : null}
 
       <div
-        className={`fixed bottom-3 z-30 flex flex-col items-end gap-2 ${sidebarOpen ? "right-84" : "right-3"} ${
+        className={`fixed bottom-[36dvh] z-30 flex flex-col items-end gap-2 sm:bottom-3 ${sidebarOpen ? "right-84" : "right-3"} ${
           debugEnabled ? "hidden" : ""
         }`}
       >
@@ -5218,7 +5218,7 @@ export function OfficeScreen({
               width: chatRosterCollapsed
                 ? "min(680px, calc(100vw - 1.5rem))"
                 : "min(780px, calc(100vw - 1.5rem))",
-              height: "min(560px, calc(100vh - 5.5rem))",
+              height: "min(560px, calc(100dvh - 9rem))",
             }}
           >
             <div
@@ -5246,8 +5246,8 @@ export function OfficeScreen({
                 type="button"
                 onClick={() => setChatRosterCollapsed((current) => !current)}
                 className="mx-2 mt-2 inline-flex items-center justify-center rounded border border-white/10 bg-white/5 px-2 py-2 text-white/65 transition hover:border-white/20 hover:bg-white/10 hover:text-white"
-                aria-label={chatRosterCollapsed ? "Expand agent list" : "Collapse agent list"}
-                title={chatRosterCollapsed ? "Expand agent list" : "Collapse agent list"}
+                aria-label={chatRosterCollapsed ? "Perluas daftar agen" : "Collapse agent list"}
+                title={chatRosterCollapsed ? "Perluas daftar agen" : "Collapse agent list"}
               >
                 {chatRosterCollapsed ? (
                   <ChevronRight className="h-4 w-4" />
@@ -5308,7 +5308,7 @@ export function OfficeScreen({
                           </span>
                         ) : null}
                         <span className="sr-only">
-                          {agent.kind === "remote" ? "Remote agent" : "Local agent"}
+                          {agent.kind === "remote" ? "Agen jarak jauh" : "Agen lokal"}
                         </span>
                       </button>
                     );

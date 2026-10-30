@@ -58,8 +58,8 @@ type WizardStepId =
 const wizardSteps: Array<{ id: WizardStepId; label: string; hint: string }> = [
   {
     id: "identity",
-    label: "Identity",
-    hint: "Create the live agent first, then fill in the rest step by step.",
+    label: "Identitas",
+    hint: "Buat agen aktif terlebih dahulu, lalu lengkapi bagian lainnya langkah demi langkah.",
   },
   {
     id: "avatar",

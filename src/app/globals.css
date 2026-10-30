@@ -1359,3 +1359,49 @@ textarea:focus::-webkit-scrollbar {
     transform: translateY(-1px);
   }
 }
+
+/* NEX-MEX pop-art interface: connection and settings screens only. */
+.nex-pop-connect .ui-card,
+.nex-pop-settings > div {
+  border-color: #000 !important;
+  color: #111 !important;
+}
+.nex-pop-connect .text-foreground,
+.nex-pop-connect .text-foreground\/90,
+.nex-pop-connect .text-muted-foreground,
+.nex-pop-connect .text-foreground\/90 *,
+.nex-pop-settings .text-white,
+.nex-pop-settings .text-white\/75,
+.nex-pop-settings .text-white\/60,
+.nex-pop-settings .text-white\/50,
+.nex-pop-settings .text-white\/80,
+.nex-pop-settings .text-cyan-100\/65,
+.nex-pop-settings .text-cyan-200\/70 {
+  color: #171717 !important;
+}
+.nex-pop-connect .ui-btn-secondary,
+.nex-pop-connect .ui-btn-primary {
+  border: 2px solid #000 !important;
+  background: #ff4fd8 !important;
+  color: #111 !important;
+  box-shadow: 3px 3px 0 #000;
+}
+.nex-pop-connect input,
+.nex-pop-settings input {
+  color: #111 !important;
+  border-color: #000 !important;
+}
+.nex-pop-connect input::placeholder,
+.nex-pop-settings input::placeholder {
+  color: #555 !important;
+}
+.nex-pop-settings .ui-settings-row {
+  border: 2px solid #000 !important;
+  background: #00f5ff !important;
+}
+@media (max-width: 640px) {
+  .nex-pop-connect { gap: 0.75rem; }
+  .nex-pop-connect .ui-card { min-width: 0; overflow-wrap: anywhere; }
+  .nex-pop-connect button { max-width: 100%; }
+  .nex-pop-connect .grid { min-width: 0; }
+}

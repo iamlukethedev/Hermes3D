@@ -23,21 +23,21 @@ type MarketplaceFilter = "all" | SkillMarketplaceCollectionId;
 
 const FILTER_LABELS: Record<MarketplaceFilter, string> = {
   hermes3d: "Hermes3D",
-  all: "All",
-  featured: "Featured",
-  installed: "Installed",
-  "setup-required": "Needs setup",
-  "built-in": "Built-in",
-  workspace: "Workspace",
-  extra: "Community",
+  all: "Semua",
+  featured: "Unggulan",
+  installed: "Terpasang",
+  "setup-required": "Perlu disiapkan",
+  "built-in": "Bawaan",
+  workspace: "Ruang kerja",
+  extra: "Komunitas",
   other: "Other",
 };
 
 const READINESS_LABELS = {
-  ready: "Ready",
-  "needs-setup": "Needs setup",
-  unavailable: "Unavailable",
-  "disabled-globally": "Disabled globally",
+  ready: "Siap",
+  "needs-setup": "Perlu disiapkan",
+  unavailable: "Tidak tersedia",
+  "disabled-globally": "Dinonaktifkan secara global",
 } as const;
 
 const READINESS_CLASSES = {

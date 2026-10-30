@@ -84,7 +84,7 @@ export const ConnectionPanel = ({
             onClick={isConnected ? onDisconnect : onConnect}
             disabled={isConnecting || !gatewayUrl.trim()}
           >
-            {isConnected ? "Disconnect" : "Connect"}
+            {isConnected ? "Putuskan koneksi" : "Hubungkan"}
           </button>
         </div>
         {onClose ? (
@@ -113,7 +113,7 @@ export const ConnectionPanel = ({
           />
         </label>
         <label className="flex flex-col gap-1 font-mono text-[10px] font-semibold tracking-[0.06em] text-muted-foreground">
-          {tokenOptional ? "Upstream token (optional)" : "Upstream token"}
+          {tokenOptional ? "Token gateway (opsional)" : "Token gateway"}
           <input
             className="ui-input h-10 rounded-md px-4 font-sans text-sm text-foreground outline-none"
             type="password"

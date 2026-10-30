@@ -27,10 +27,10 @@ type TemplateDefinition = {
 const PLAYBOOK_TEMPLATES: TemplateDefinition[] = [
   {
     id: "daily-briefing",
-    name: "Daily Morning Briefing",
+    name: "Ringkasan Pagi Harian",
     description: "Every day at 9am. Summarize priorities, blockers, and what changed overnight.",
     buildInput: (agent, customName) => ({
-      name: customName || "Daily Morning Briefing",
+      name: customName || "Ringkasan Pagi Harian",
       agentId: agent.agentId,
       sessionKey: agent.sessionKey,
       enabled: true,
@@ -40,17 +40,17 @@ const PLAYBOOK_TEMPLATES: TemplateDefinition[] = [
       payload: {
         kind: "agentTurn",
         message:
-          "Create a concise morning briefing for headquarters. Summarize current priorities, blocked work, recent notable changes, and the next recommended actions.",
+          "Buat ringkasan pagi singkat untuk kantor pusat. Rangkum prioritas saat ini, pekerjaan yang terhambat, perubahan penting terbaru, dan tindakan berikutnya yang disarankan.",
         thinking: "high",
       },
     }),
   },
   {
     id: "nightly-code-review",
-    name: "Nightly Code Review Digest",
+    name: "Ringkasan Tinjauan Kode Malam",
     description: "Every night at midnight. Review the day and summarize risky changes or regressions.",
     buildInput: (agent, customName) => ({
-      name: customName || "Nightly Code Review Digest",
+      name: customName || "Ringkasan Tinjauan Kode Malam",
       agentId: agent.agentId,
       sessionKey: agent.sessionKey,
       enabled: true,

@@ -17,12 +17,12 @@ import {
 import type { StudioSettingsCoordinator } from "@/lib/studio/coordinator";
 
 const formatPercent = (value: number | null | undefined) => {
-  if (value === null || value === undefined) return "n/a";
+  if (value === null || value === undefined) return "tidak tersedia";
   return `${Math.round(value * 100)}%`;
 };
 
 const formatDuration = (valueMs: number | null | undefined) => {
-  if (!valueMs) return "n/a";
+  if (!valueMs) return "tidak tersedia";
   const seconds = Math.round(valueMs / 1000);
   if (seconds < 60) return `${seconds}s`;
   const minutes = Math.floor(seconds / 60);
@@ -172,21 +172,21 @@ export function AnalyticsPanel({
           Analytics
         </div>
         <div className="mt-1 font-mono text-[11px] text-white/40">
-          Real usage, spend, and agent trust metrics for headquarters.
+          Data penggunaan, biaya, dan keandalan agen untuk kantor pusat.
         </div>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
         <div className="grid grid-cols-2 gap-2">
-          <DatePickerField label="Start" value={startDate} onChange={setStartDate} />
-          <DatePickerField label="End" value={endDate} onChange={setEndDate} />
+          <DatePickerField label="Mulai" value={startDate} onChange={setStartDate} />
+          <DatePickerField label="Selesai" value={endDate} onChange={setEndDate} />
         </div>
 
         <div className="mt-2 flex items-center justify-between gap-2">
           <div className="font-mono text-[10px] text-white/35">
             {usage.lastRefreshedAt
-              ? `Last refresh ${new Date(usage.lastRefreshedAt).toLocaleTimeString()}`
-              : "No analytics snapshot yet"}
+              ? `Pembaruan terakhir ${new Date(usage.lastRefreshedAt).toLocaleTimeString("id-ID")}`
+              : "Belum ada data analitik."}
           </div>
           <button
             type="button"

@@ -25,8 +25,8 @@ const formatDuration = (startedAt: number, endedAt: number | null) => {
 };
 
 const TRIGGER_LABELS: Record<RunTriggerKind, string> = {
-  user: "USER",
-  heartbeat: "HEARTBEAT",
+  user: "PENGGUNA",
+  heartbeat: "DENYUT",
   cron: "CRON",
 };
 
@@ -54,10 +54,10 @@ export function HistoryPanel({
     <section className="flex h-full min-h-0 flex-col">
       <div className="border-b border-cyan-500/10 px-4 py-3">
         <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-white/70">
-          Audit Log
+          Riwayat Aktivitas
         </div>
         <div className="mt-1 font-mono text-[11px] text-white/40">
-          This session only. Lifecycle events are captured live from HQ.
+          Hanya sesi ini. Aktivitas proses dicatat langsung dari kantor pusat.
         </div>
       </div>
 

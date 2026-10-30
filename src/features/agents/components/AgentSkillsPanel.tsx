@@ -26,16 +26,16 @@ type AgentSkillsPanelProps = {
 };
 
 const FILTERS: Array<{ id: SkillRowFilter; label: string }> = [
-  { id: "all", label: "All" },
-  { id: "ready", label: "Ready" },
-  { id: "setup-required", label: "Setup required" },
-  { id: "not-supported", label: "Not supported" },
+  { id: "all", label: "Semua" },
+  { id: "ready", label: "Siap" },
+  { id: "setup-required", label: "Perlu penyiapan" },
+  { id: "not-supported", label: "Tidak didukung" },
 ];
 
 const DISPLAY_LABELS: Record<AgentSkillDisplayState, string> = {
-  ready: "Ready",
-  "setup-required": "Setup required",
-  "not-supported": "Not supported",
+  ready: "Siap",
+  "setup-required": "Perlu penyiapan",
+  "not-supported": "Tidak didukung",
 };
 
 const DISPLAY_CLASSES: Record<AgentSkillDisplayState, string> = {
@@ -53,9 +53,9 @@ const resolveHint = (
   }
   if (displayState === "not-supported") {
     if (skill.blockedByAllowlist) {
-      return "Blocked by bundled skills policy.";
+      return "Diblokir oleh kebijakan keterampilan bawaan.";
     }
-    return buildSkillMissingDetails(skill).find((line) => line.startsWith("Requires OS:")) ?? "Not supported.";
+    return buildSkillMissingDetails(skill).find((line) => line.startsWith("Requires OS:")) ?? "Tidak didukung.";
   }
   const readiness = deriveSkillReadinessState(skill);
   if (readiness === "disabled-globally") {

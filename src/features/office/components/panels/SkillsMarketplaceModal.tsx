@@ -49,7 +49,7 @@ export function SkillsMarketplaceModal({
       className="fixed inset-0 z-[125] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
-      aria-label="Skills marketplace"
+      aria-label="Pasar keterampilan"
       onClick={onClose}
     >
       <div
@@ -59,7 +59,7 @@ export function SkillsMarketplaceModal({
         <div className="flex items-start justify-between gap-4 border-b border-cyan-500/10 px-5 py-4">
           <div>
             <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-cyan-300/80">
-              Skills Marketplace
+              Pasar Keterampilan
             </div>
             <div className="mt-1 font-mono text-[11px] text-white/45">
               Discover, install, and enable gateway skills in a wider workspace.

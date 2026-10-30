@@ -205,14 +205,14 @@ export function PixelOffice2D(props: PixelOffice2DProps) {
       <div className="absolute inset-0" ref={rootRef} />
 
       {/* Office title — top left. */}
-      <div className="absolute top-3 left-3 z-20 flex items-center gap-2 select-none">
-        <div className="rounded-md border border-black/25 bg-[#11131c]/85 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-100 backdrop-blur-sm">
+      <div className="absolute left-2 right-2 top-2 z-20 flex flex-wrap items-start gap-1.5 select-none sm:left-3 sm:right-auto sm:top-3 sm:gap-2">
+        <div className="max-w-[52vw] truncate rounded-md border-2 border-black bg-[#ffe600] px-2 py-1.5 text-[10px] font-black uppercase tracking-[0.08em] text-black shadow-[3px_3px_0_#000] sm:max-w-none sm:px-3 sm:text-[11px] sm:tracking-[0.12em]">
           {officeTitleLoaded ? officeTitle : ""}
         </div>
-        <div className="rounded-md border border-black/25 bg-[#11131c]/70 px-2 py-1.5 text-[10px] font-mono text-white/70 backdrop-blur-sm">
+        <div className="rounded-md border-2 border-black bg-[#00f5ff] px-2 py-1.5 text-[10px] font-black text-black shadow-[3px_3px_0_#000]">
           2D PIXEL
         </div>
-        <div className="flex items-center gap-2 rounded-md border border-black/25 bg-[#11131c]/70 px-2 py-1.5 text-[10px] font-mono backdrop-blur-sm">
+        <div className="hidden items-center gap-2 rounded-md border-2 border-black bg-white px-2 py-1.5 text-[10px] font-black shadow-[3px_3px_0_#000] sm:flex">
           <span className="text-emerald-300/85">{workingCount} working</span>
           <span className="text-white/25">·</span>
           <span className="text-amber-300/85">{idleCount} idle</span>
@@ -226,12 +226,12 @@ export function PixelOffice2D(props: PixelOffice2DProps) {
       </div>
 
       {/* Toolbar — top right. */}
-      <div className="absolute top-3 right-3 z-20 flex items-center gap-2">
+      <div className="absolute right-2 top-12 z-20 flex max-w-[calc(100%-1rem)] flex-wrap justify-end gap-1.5 sm:right-3 sm:top-3 sm:flex-nowrap sm:gap-2">
         {onAddAgent ? (
           <button
             onClick={onAddAgent}
             title="Add agent"
-            className="flex h-7 items-center justify-center gap-1 rounded-md border border-cyan-500/35 bg-[#071018]/92 px-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-200 transition-all backdrop-blur-sm hover:border-cyan-400/55 hover:text-white"
+            className="flex h-9 items-center justify-center gap-1 rounded-md border-2 border-black bg-[#ff4fd8] px-2 text-[10px] font-black uppercase tracking-[0.08em] text-black shadow-[3px_3px_0_#000] transition-transform hover:-translate-y-0.5 sm:h-8"
           >
             <UserPlus size={12} />
             <span>Add</span>
@@ -271,8 +271,8 @@ export function PixelOffice2D(props: PixelOffice2DProps) {
       </div>
 
       {/* Controls hint — bottom center (event console and chat own the corners). */}
-      <div className="absolute bottom-3 left-1/2 z-10 -translate-x-1/2 pointer-events-none select-none">
-        <div className="rounded-full bg-black/50 px-3 py-1 text-[10px] font-mono text-white/55 backdrop-blur-sm">
+      <div className="absolute bottom-3 left-2 right-2 z-10 pointer-events-none select-none sm:left-1/2 sm:right-auto sm:-translate-x-1/2">
+        <div className="mx-auto w-fit max-w-full rounded-md border-2 border-black bg-[#ffe600] px-3 py-1 text-center text-[9px] font-black text-black shadow-[3px_3px_0_#000] sm:text-[10px]">
           drag to pan · scroll to zoom · click an agent to chat
         </div>
       </div>
@@ -333,20 +333,20 @@ export function PixelOffice2D(props: PixelOffice2DProps) {
       {/* Studio settings modal (same panel the 3D office uses). */}
       {settingsOpen ? (
         <div className="absolute inset-0 z-30 flex items-start justify-end overflow-y-auto bg-black/35 p-4 backdrop-blur-[1px]">
-          <div className="flex max-h-[calc(100vh-2rem)] w-full max-w-sm flex-col overflow-hidden rounded-xl border border-cyan-500/20 bg-[#05090d]/95 shadow-2xl">
-            <div className="flex items-start justify-between border-b border-cyan-500/10 px-4 py-3">
+          <div className="flex max-h-[calc(100dvh-2rem)] w-full max-w-sm flex-col overflow-hidden rounded-xl border-2 border-black bg-[#fff8e7] text-black shadow-[-6px_6px_0_#000]">
+            <div className="flex items-start justify-between border-b-2 border-black bg-[#ffe600] px-3 py-3">
               <div>
-                <div className="font-mono text-[10px] font-semibold tracking-[0.28em] text-cyan-300/75">
+                <div className="font-mono text-[10px] font-black tracking-[0.12em] text-black">
                   STUDIO SETTINGS
                 </div>
-                <div className="mt-1 text-[11px] text-white/45">
+                <div className="mt-1 text-[11px] font-semibold text-black/70">
                   Customize the office banner and spoken replies across the app.
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => setSettingsOpen(false)}
-                className="flex h-7 w-7 items-center justify-center rounded-md border border-cyan-500/10 bg-black/20 text-cyan-100/70 transition-colors hover:border-cyan-400/30 hover:text-cyan-100"
+                className="flex h-9 w-9 items-center justify-center rounded-md border-2 border-black bg-[#ff4fd8] text-black shadow-[2px_2px_0_#000]"
                 aria-label="Close studio settings"
               >
                 <X size={12} />

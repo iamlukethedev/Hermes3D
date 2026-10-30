@@ -35,18 +35,18 @@ type SystemSkillsPanelProps = {
 };
 
 const READINESS_FILTERS: Array<{ id: ReadinessFilter; label: string }> = [
-  { id: "all", label: "All" },
-  { id: "ready", label: "Ready" },
-  { id: "needs-setup", label: "Needs setup" },
-  { id: "unavailable", label: "Unavailable" },
-  { id: "disabled-globally", label: "Disabled globally" },
+  { id: "all", label: "Semua" },
+  { id: "ready", label: "Siap" },
+  { id: "needs-setup", label: "Perlu disiapkan" },
+  { id: "unavailable", label: "Tidak tersedia" },
+  { id: "disabled-globally", label: "Dinonaktifkan secara global" },
 ];
 
 const READINESS_LABELS = {
-  ready: "Ready",
-  "needs-setup": "Needs setup",
-  unavailable: "Unavailable",
-  "disabled-globally": "Disabled globally",
+  ready: "Siap",
+  "needs-setup": "Perlu disiapkan",
+  unavailable: "Tidak tersedia",
+  "disabled-globally": "Dinonaktifkan secara global",
 } as const;
 
 const READINESS_CLASSES = {

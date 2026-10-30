@@ -22,7 +22,7 @@ const labelClassName =
 
 const resolveInitialName = (suggestedName: string): string => {
   const trimmed = suggestedName.trim();
-  if (!trimmed) return "New Agent";
+  if (!trimmed) return "Agen Baru";
   return trimmed;
 };
 
@@ -50,7 +50,7 @@ const AgentCreateModalContent = ({
       className="fixed inset-0 z-[120] flex items-center justify-center bg-background/80 p-4"
       role="dialog"
       aria-modal="true"
-      aria-label="Create agent"
+      aria-label="Buat agen"
       onClick={busy ? undefined : onClose}
     >
       <form
@@ -98,7 +98,7 @@ const AgentCreateModalContent = ({
             <div className={labelClassName}>Choose avatar</div>
             <AgentAvatar
               seed={avatarSeed}
-              name={name.trim() || "New Agent"}
+              name={name.trim() || "Agen Baru"}
               size={64}
               isSelected
             />

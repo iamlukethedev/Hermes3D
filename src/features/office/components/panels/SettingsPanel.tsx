@@ -97,7 +97,7 @@ export function SettingsPanel({
   const normalizedGatewayToken = gatewayToken ?? "";
   const gatewayStateLabel = gatewayStatus
     ? gatewayStatus.charAt(0).toUpperCase() + gatewayStatus.slice(1)
-    : "Unknown";
+    : "Tidak diketahui";
   const isGatewayConnected = gatewayStatus === "connected";
   const gatewayDisconnectDisabled = !isGatewayConnected;
   const gatewayConnectDisabled = normalizedGatewayUrl.length === 0;
@@ -110,17 +110,17 @@ export function SettingsPanel({
   const [remoteOfficeTokenDraft, setRemoteOfficeTokenDraft] = useState("");
 
   return (
-    <div className="px-4 py-4">
-      <div className="rounded-lg border border-cyan-500/10 bg-black/20 px-4 py-3">
+    <div className="nex-pop-settings px-3 py-3 sm:px-4 sm:py-4">
+      <div className="mb-3 rounded-xl border-2 border-black bg-[#fff8e7] px-3 py-3 text-black shadow-[-4px_4px_0_#000] sm:px-4">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <div className="text-[11px] font-medium text-white">Studio title</div>
+            <div className="text-[11px] font-medium text-white">Judul studio</div>
             <div className="mt-1 text-[10px] text-white/75">
-              Customize the banner shown at the top of the office.
+              Atur tulisan yang ditampilkan di bagian atas kantor.
             </div>
           </div>
           <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-cyan-200/70">
-            {officeTitleLoaded ? "Ready" : "Loading"}
+            {officeTitleLoaded ? "Siap" : "Memuat"}
           </span>
         </div>
         <input
@@ -129,19 +129,19 @@ export function SettingsPanel({
           maxLength={48}
           disabled={!officeTitleLoaded}
           onChange={(event) => onOfficeTitleChange(event.target.value)}
-          placeholder="Luke Headquarters"
+          placeholder="Kantor Pusat NEX-MEX"
           className="mt-3 w-full rounded-md border border-cyan-500/10 bg-black/25 px-3 py-2 text-[11px] uppercase tracking-[0.18em] text-cyan-100 outline-none transition-colors placeholder:text-cyan-100/30 focus:border-cyan-400/30 disabled:cursor-not-allowed disabled:opacity-50"
         />
         <div className="mt-2 text-[10px] text-white/50">
-          Used in the office scene header.
+          Digunakan pada bagian atas tampilan kantor.
         </div>
       </div>
-      <div className="mt-3 rounded-lg border border-cyan-500/10 bg-black/20 px-4 py-3">
+      <div className="mt-3 rounded-xl border-2 border-black bg-[#fff8e7] px-3 py-3 text-black shadow-[-4px_4px_0_#000] sm:px-4">
         <div className="flex items-start justify-between gap-3">
           <div>
             <div className="text-[11px] font-medium text-white">Gateway</div>
             <div className="mt-1 text-[10px] text-white/75">
-              Switch the active backend and update its saved endpoint details.
+              Ganti backend aktif dan perbarui alamat koneksinya.
             </div>
           </div>
           <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-cyan-200/70">
@@ -164,10 +164,10 @@ export function SettingsPanel({
                 key={adapterType}
                 type="button"
                 onClick={() => onGatewayAdapterTypeChange?.(adapterType)}
-                className={`rounded-md border px-3 py-1.5 text-[10px] font-medium uppercase tracking-[0.14em] transition-colors ${
+                className={`min-h-9 rounded-md border-2 border-black px-3 py-2 text-[10px] font-black uppercase tracking-[0.08em] text-black shadow-[2px_2px_0_#000] transition-colors ${
                   selected
-                    ? "border-cyan-400/35 bg-cyan-500/12 text-cyan-50"
-                    : "border-cyan-500/10 bg-black/20 text-white/75 hover:border-cyan-400/25 hover:text-cyan-50"
+                    ? "bg-[#ffe600]"
+                    : "bg-white hover:bg-[#00f5ff]"
                 }`}
               >
                 {label}
@@ -178,7 +178,7 @@ export function SettingsPanel({
         <div className="mt-3 grid gap-3">
           <div>
             <div className="mb-1 text-[10px] uppercase tracking-[0.14em] text-cyan-100/65">
-              Upstream URL
+              URL Gateway
             </div>
             <input
               type="text"
@@ -192,34 +192,34 @@ export function SettingsPanel({
                     ? "http://localhost:3000/api/runtime/custom"
                   : "ws://localhost:18789"
               }
-              className="w-full rounded-md border border-cyan-500/10 bg-black/25 px-3 py-2 font-mono text-[11px] text-cyan-100 outline-none transition-colors placeholder:text-cyan-100/30 focus:border-cyan-400/30"
+              className="w-full rounded-md border-2 border-black bg-white px-3 py-2 font-mono text-[11px] text-black outline-none placeholder:text-black/40 focus:ring-2 focus:ring-[#00f5ff]"
             />
           </div>
           <div>
             <div className="mb-1 text-[10px] uppercase tracking-[0.14em] text-cyan-100/65">
-              {tokenOptional ? "Upstream token (optional)" : "Upstream token"}
+              {tokenOptional ? "Token gateway (opsional)" : "Token gateway"}
             </div>
             <input
               type="password"
               value={normalizedGatewayToken}
               onChange={(event) => onGatewayTokenChange?.(event.target.value)}
-              placeholder={tokenOptional ? "optional token" : "gateway token"}
-              className="w-full rounded-md border border-cyan-500/10 bg-black/25 px-3 py-2 text-[11px] text-cyan-100 outline-none transition-colors placeholder:text-cyan-100/30 focus:border-cyan-400/30"
+              placeholder={tokenOptional ? "token opsional" : "token gateway"}
+              className="w-full rounded-md border-2 border-black bg-white px-3 py-2 text-[11px] text-black outline-none placeholder:text-black/40 focus:ring-2 focus:ring-[#00f5ff]"
             />
           </div>
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-2 text-[10px] text-white/60">
           <span className="font-mono">
-            Selected backend: {selectedAdapterType}
+            Backend terpilih: {selectedAdapterType}
           </span>
           <span className="font-mono">
-            Active backend: {activeAdapterType}
+            Backend aktif: {activeAdapterType}
           </span>
-          <span>Each backend keeps its own saved URL and token.</span>
+          <span>Setiap backend menyimpan URL dan tokennya sendiri.</span>
         </div>
         <div className="mt-3 flex items-center justify-between gap-3">
           <div className="text-[10px] text-white/60">
-            Connect to apply the selected backend, or disconnect to return to the connection screen.
+            Hubungkan untuk menerapkan backend pilihan, atau putuskan koneksi untuk kembali ke layar koneksi.
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -228,7 +228,7 @@ export function SettingsPanel({
               disabled={gatewayConnectDisabled}
               className="rounded-md border border-cyan-500/20 bg-cyan-500/10 px-3 py-1.5 text-[10px] font-medium uppercase tracking-[0.14em] text-cyan-50 transition-colors hover:border-cyan-400/40 hover:bg-cyan-500/15 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              {gatewayStatus === "connecting" ? "Connecting..." : "Connect"}
+              {gatewayStatus === "connecting" ? "Menghubungkan..." : "Hubungkan"}
             </button>
             <button
               type="button"
@@ -236,21 +236,21 @@ export function SettingsPanel({
               disabled={gatewayDisconnectDisabled}
               className="rounded-md border border-rose-500/20 bg-rose-500/10 px-3 py-1.5 text-[10px] font-medium uppercase tracking-[0.14em] text-rose-100 transition-colors hover:border-rose-400/40 hover:bg-rose-500/15 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              Disconnect gateway
+              Putuskan koneksi gateway
             </button>
           </div>
         </div>
       </div>
-      <div className="mt-3 rounded-lg border border-cyan-500/10 bg-black/20 px-4 py-3">
+      <div className="mt-3 rounded-xl border-2 border-black bg-[#fff8e7] px-3 py-3 text-black shadow-[-4px_4px_0_#000] sm:px-4">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <div className="text-[11px] font-medium text-white">Remote office</div>
+            <div className="text-[11px] font-medium text-white">Kantor jarak jauh</div>
             <div className="mt-1 text-[10px] text-white/75">
-              Attach a second read-only office from either another Hermes3D or a remote Hermes gateway.
+              Hubungkan kantor kedua dalam mode hanya-baca dari Hermes3D lain atau gateway Hermes jarak jauh.
             </div>
           </div>
           <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-cyan-200/70">
-            {remoteOfficeEnabled ? "Enabled" : "Disabled"}
+            {remoteOfficeEnabled ? "Aktif" : "Nonaktif"}
           </span>
         </div>
         <div className="ui-settings-row mt-3 flex min-h-[72px] items-center justify-between gap-6 rounded-lg border border-cyan-500/10 bg-black/15 px-4 py-3">
@@ -258,7 +258,7 @@ export function SettingsPanel({
             <button
               type="button"
               role="switch"
-              aria-label="Remote office"
+              aria-label="Kantor jarak jauh"
               aria-checked={remoteOfficeEnabled}
               className={`ui-switch self-center ${remoteOfficeEnabled ? "ui-switch--on" : ""}`}
               onClick={() => onRemoteOfficeEnabledChange(!remoteOfficeEnabled)}
@@ -266,14 +266,14 @@ export function SettingsPanel({
               <span className="ui-switch-thumb" />
             </button>
             <div className="flex flex-col">
-              <span className="text-[11px] font-medium text-white">Show second office</span>
+              <span className="text-[11px] font-medium text-white">Tampilkan kantor kedua</span>
               <span className="text-[10px] text-white/80">
-                Remote agents stay visible but non-interactive.
+                Agen jarak jauh tetap terlihat, tetapi tidak dapat dikendalikan.
               </span>
             </div>
           </div>
           <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-cyan-200/70">
-            {remoteOfficeTokenConfigured ? "Token set" : "No token"}
+            {remoteOfficeTokenConfigured ? "Token tersedia" : "No token"}
           </span>
         </div>
         <div className="mt-3 grid gap-3">
@@ -321,7 +321,7 @@ export function SettingsPanel({
                   value={remoteOfficePresenceUrl}
                   onChange={(event) => onRemoteOfficePresenceUrlChange(event.target.value)}
                   placeholder="https://other-office.example.com/api/office/presence"
-                  className="w-full rounded-md border border-cyan-500/10 bg-black/25 px-3 py-2 text-[11px] text-cyan-100 outline-none transition-colors placeholder:text-cyan-100/30 focus:border-cyan-400/30"
+                  className="w-full rounded-md border-2 border-black bg-white px-3 py-2 text-[11px] text-black outline-none placeholder:text-black/40 focus:ring-2 focus:ring-[#00f5ff]"
                 />
                 <div className="mt-1 text-[10px] text-white/50">
                   Studio polls this endpoint server-side when the other machine is also running Hermes3D.
@@ -347,7 +347,7 @@ export function SettingsPanel({
                     }}
                     className="rounded-md border border-cyan-500/20 bg-cyan-500/10 px-3 py-2 text-[10px] font-medium uppercase tracking-[0.14em] text-cyan-100 transition-colors hover:border-cyan-400/40 hover:bg-cyan-500/15"
                   >
-                    Save
+                    Simpan
                   </button>
                   {remoteOfficeTokenConfigured ? (
                     <button
@@ -375,7 +375,7 @@ export function SettingsPanel({
                   value={remoteOfficeGatewayUrl}
                   onChange={(event) => onRemoteOfficeGatewayUrlChange(event.target.value)}
                   placeholder="wss://remote-gateway.example.com"
-                  className="w-full rounded-md border border-cyan-500/10 bg-black/25 px-3 py-2 text-[11px] text-cyan-100 outline-none transition-colors placeholder:text-cyan-100/30 focus:border-cyan-400/30"
+                  className="w-full rounded-md border-2 border-black bg-white px-3 py-2 text-[11px] text-black outline-none placeholder:text-black/40 focus:ring-2 focus:ring-[#00f5ff]"
                 />
                 <div className="mt-1 text-[10px] text-white/50">
                   Hermes3D connects from the browser directly to the remote Hermes gateway and derives a read-only presence snapshot.
@@ -401,7 +401,7 @@ export function SettingsPanel({
                     }}
                     className="rounded-md border border-cyan-500/20 bg-cyan-500/10 px-3 py-2 text-[10px] font-medium uppercase tracking-[0.14em] text-cyan-100 transition-colors hover:border-cyan-400/40 hover:bg-cyan-500/15"
                   >
-                    Save
+                    Simpan
                   </button>
                   {remoteOfficeTokenConfigured ? (
                     <button
@@ -424,7 +424,7 @@ export function SettingsPanel({
           )}
         </div>
       </div>
-      <div className="mt-3 rounded-lg border border-cyan-500/10 bg-black/20 px-4 py-3">
+      <div className="mt-3 rounded-xl border-2 border-black bg-[#fff8e7] px-3 py-3 text-black shadow-[-4px_4px_0_#000] sm:px-4">
         <div className="flex items-start justify-between gap-3">
           <div>
             <div className="text-[11px] font-medium text-white">Onboarding</div>
@@ -442,7 +442,7 @@ export function SettingsPanel({
         </div>
       </div>
       {renderMode && onRenderModeChange ? (
-        <div className="mt-3 rounded-lg border border-cyan-500/10 bg-black/20 px-4 py-3">
+        <div className="mt-3 rounded-xl border-2 border-black bg-[#fff8e7] px-3 py-3 text-black shadow-[-4px_4px_0_#000] sm:px-4">
           <div className="text-[11px] font-medium text-white">Office renderer</div>
           <div className="mt-1 text-[10px] text-white/75">
             Pick the immersive 3D office or the lightweight 2D pixel office.
@@ -477,10 +477,10 @@ export function SettingsPanel({
         </div>
       ) : null}
       {graphicsQuality && onGraphicsQualityChange ? (
-        <div className="mt-3 rounded-lg border border-cyan-500/10 bg-black/20 px-4 py-3">
-          <div className="text-[11px] font-medium text-white">Graphics quality</div>
+        <div className="mt-3 rounded-xl border-2 border-black bg-[#fff8e7] px-3 py-3 text-black shadow-[-4px_4px_0_#000] sm:px-4">
+          <div className="text-[11px] font-medium text-white">Kualitas grafis</div>
           <div className="mt-1 text-[10px] text-white/75">
-            Balance visual fidelity against performance in the 3D office.
+            Seimbangkan kualitas visual dan performa kantor 3D.
           </div>
           <div className="mt-3 grid gap-2">
             {GRAPHICS_QUALITY_OPTIONS.map((option) => {
@@ -530,7 +530,7 @@ export function SettingsPanel({
           {voiceRepliesLoaded ? (voiceRepliesEnabled ? "On" : "Off") : "Loading"}
         </span>
       </div>
-      <div className="mt-3 rounded-lg border border-cyan-500/10 bg-black/20 px-4 py-3">
+      <div className="mt-3 rounded-xl border-2 border-black bg-[#fff8e7] px-3 py-3 text-black shadow-[-4px_4px_0_#000] sm:px-4">
         <div className="text-[11px] font-medium text-white">Voice</div>
         <div className="mt-1 text-[10px] text-white/75">
           Choose the voice used for spoken agent replies.
@@ -560,7 +560,7 @@ export function SettingsPanel({
           })}
         </div>
       </div>
-      <div className="mt-3 rounded-lg border border-cyan-500/10 bg-black/20 px-4 py-3">
+      <div className="mt-3 rounded-xl border-2 border-black bg-[#fff8e7] px-3 py-3 text-black shadow-[-4px_4px_0_#000] sm:px-4">
         <div className="flex items-center justify-between gap-3">
           <div>
             <div className="text-[11px] font-medium text-white">Speed</div>

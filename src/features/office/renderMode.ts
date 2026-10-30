@@ -14,13 +14,13 @@ export const OFFICE_RENDER_MODE_OPTIONS: Array<{
 }> = [
   {
     id: "3d",
-    label: "3D immersive",
-    description: "Full Three.js office with shadows and post-processing.",
+    label: "3D Imersif",
+    description: "Kantor 3D penuh dengan bayangan dan efek visual.",
   },
   {
     id: "2d",
-    label: "2D pixel",
-    description: "Gather-style pixel office. Great for low-power machines.",
+    label: "Piksel 2D",
+    description: "Kantor bergaya piksel yang ringan untuk perangkat sederhana.",
   },
 ];
 

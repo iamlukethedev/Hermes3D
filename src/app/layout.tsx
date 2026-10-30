@@ -3,8 +3,8 @@ import { Bebas_Neue, IBM_Plex_Mono, IBM_Plex_Sans } from "next/font/google";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Hermes3D",
-  description: "Focused operator studio for the Hermes gateway.",
+  title: "NEX-MEX",
+  description: "Kantor virtual untuk mengelola dan memantau agen AI.",
 };
 
 const display = Bebas_Neue({
@@ -31,7 +31,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="id" suppressHydrationWarning>
       <head>
         <script
           dangerouslySetInnerHTML={{
