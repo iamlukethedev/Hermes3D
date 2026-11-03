@@ -195,6 +195,53 @@ const TEAM_TOOLS = [
   },
 ];
 
+// File tools available to every agent, sandboxed to that agent's own workspace
+// directory (the same folder its installed skills and profile files live in).
+const FS_TOOLS = [
+  {
+    type: "function",
+    function: {
+      name: "read_file",
+      description: "Read a text file from your own workspace. Path is relative to your workspace root (e.g. 'config.json', 'kpi/dashboard.json').",
+      parameters: {
+        type: "object",
+        required: ["path"],
+        properties: {
+          path: { type: "string", description: "File path relative to your workspace root." },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "write_file",
+      description: "Create or overwrite a text file in your own workspace. Creates parent directories as needed. Path is relative to your workspace root.",
+      parameters: {
+        type: "object",
+        required: ["path", "content"],
+        properties: {
+          path: { type: "string", description: "File path relative to your workspace root." },
+          content: { type: "string", description: "Full file content to write (replaces any existing content)." },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "list_directory",
+      description: "List files and subdirectories at a path in your own workspace. Omit path (or use '.') to list the workspace root.",
+      parameters: {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "Directory path relative to your workspace root. Defaults to the root." },
+        },
+      },
+    },
+  },
+];
+
 // ---------------------------------------------------------------------------
 // In-memory state
 // ---------------------------------------------------------------------------
@@ -210,6 +257,98 @@ const agentFiles = new Map();
 
 /** @type {Map<string, {runId: string, sessionKey: string, agentId: string, abort: () => void}>} runId → abort handle */
 const activeRuns = new Map();
+
+// ---------------------------------------------------------------------------
+// Agent system prompt assembly
+// ---------------------------------------------------------------------------
+// Each agent's profile files (edited in Hermes3D and stored in agentFiles), the
+// skills installed in its workspace, and COMPANY.md from its workspace root are
+// appended to the base system prompt, followed by the chat language rule.
+
+const PROFILE_FILE_ORDER = ["IDENTITY.md", "SOUL.md", "AGENTS.md", "USER.md", "TOOLS.md", "MEMORY.md"];
+const MAX_SKILL_PROMPT_CHARS = 60000;
+
+/** Most recent chat language chosen in Hermes3D ("id" or "en"). Used for delegated runs. */
+let currentChatLanguage = "id";
+
+const normalizeChatLanguage = (value) => (value === "en" ? "en" : value === "id" ? "id" : null);
+
+const LANGUAGE_RULES = {
+  id: "Language: reply in Bahasa Indonesia by default, including greetings, status updates and reports. If the user clearly writes in English, you may reply in English. Keep proper names, product names, file names, code and technical terms (for example KPI, SLA, Tier 3) as they are.",
+  en: "Language: reply in English by default, including greetings, status updates and reports. If the user clearly writes in Bahasa Indonesia, you may reply in Bahasa Indonesia. Keep proper names, product names, file names, code and technical terms as they are.",
+};
+
+function readTextFileSafe(filePath, maxChars) {
+  try {
+    if (!fs.existsSync(filePath)) return null;
+    const text = fs.readFileSync(filePath, "utf8");
+    return maxChars && text.length > maxChars ? `${text.slice(0, maxChars)}\n…(truncated)` : text;
+  } catch {
+    return null;
+  }
+}
+
+function readWorkspaceSkills(workspace) {
+  if (!workspace) return [];
+  const skillsDir = path.join(workspace, "skills");
+  let entries = [];
+  try {
+    if (!fs.existsSync(skillsDir)) return [];
+    entries = fs.readdirSync(skillsDir, { withFileTypes: true }).filter((e) => e.isDirectory());
+  } catch {
+    return [];
+  }
+  const skills = [];
+  let budget = MAX_SKILL_PROMPT_CHARS;
+  for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+    if (budget <= 0) break;
+    const text = readTextFileSafe(path.join(skillsDir, entry.name, "SKILL.md"), budget);
+    if (!text) continue;
+    budget -= text.length;
+    skills.push({ name: entry.name, text });
+  }
+  return skills;
+}
+
+function buildAgentSystemPrompt(agentId, language) {
+  const agent = agentRegistry.get(agentId);
+  const sections = [];
+  if (agent?.systemPrompt) sections.push(agent.systemPrompt);
+
+  const profile = PROFILE_FILE_ORDER
+    .map((name) => ({ name, text: (agentFiles.get(`${agentId}/${name}`) || "").trim() }))
+    .filter((f) => f.text);
+  if (profile.length > 0) {
+    sections.push(
+      "# Your profile\nThese files define who you are and how you work. Follow them.\n\n" +
+      profile.map((f) => `## ${f.name}\n${f.text}`).join("\n\n"),
+    );
+  }
+
+  const company = agent?.workspace ? readTextFileSafe(path.join(agent.workspace, "COMPANY.md"), 20000) : null;
+  if (company) sections.push(`# COMPANY.md (governance — read-only)\n${company.trim()}`);
+
+  const skills = readWorkspaceSkills(agent?.workspace);
+  if (skills.length > 0) {
+    sections.push(
+      "# Installed skills\nUse a skill when its description or trigger matches the request.\n\n" +
+      skills.map((s) => `## Skill: ${s.name}\n${s.text.trim()}`).join("\n\n"),
+    );
+  }
+
+  if (agent?.workspace) {
+    sections.push(
+      "# File tools\nYou have read_file, write_file, and list_directory tools, sandboxed to your own " +
+      "workspace (the same folder your installed skills live in). Use them to read and write the state " +
+      "files your skills describe (config, KPI dashboards, reports, logs, etc.) instead of assuming they " +
+      "don't exist or guessing at their contents. Paths are relative to your workspace root.",
+    );
+  }
+
+  const lang = normalizeChatLanguage(language) || currentChatLanguage;
+  sections.push(LANGUAGE_RULES[lang]);
+  return sections.join("\n\n---\n\n");
+}
 
 /** @type {Map<string, object>} jobId → CronJobSummary */
 const cronJobs = new Map();
@@ -242,6 +381,129 @@ const activeSendEventFns = new Set();
 
 const HISTORY_FILE = path.join(HOME, ".hermes", "hermes3d-history.json");
 let persistDebounceTimer = null;
+
+const AGENTS_FILE = path.join(HOME, ".hermes", "hermes3d-agents.json");
+let agentsPersistDebounceTimer = null;
+
+function loadAgentsFromDisk() {
+  try {
+    if (fs.existsSync(AGENTS_FILE)) {
+      const raw = fs.readFileSync(AGENTS_FILE, "utf8");
+      const data = JSON.parse(raw);
+      if (Array.isArray(data)) {
+        for (const agent of data) {
+          if (agent && typeof agent.id === "string" && agent.id !== AGENT_ID) {
+            agentRegistry.set(agent.id, agent);
+          } else if (agent && agent.id === AGENT_ID) {
+            // The orchestrator keeps its built-in system prompt; only its display
+            // name and role (e.g. a rename done in Hermes3D) are restored from disk.
+            const main = agentRegistry.get(AGENT_ID);
+            if (main && typeof agent.name === "string" && agent.name.trim()) main.name = agent.name.trim();
+            if (main && typeof agent.role === "string") main.role = agent.role;
+          }
+        }
+        console.log(`[hermes-adapter] Loaded ${data.length} saved agent(s) from disk.`);
+      }
+    }
+  } catch (err) {
+    console.warn("[hermes-adapter] Could not load agents:", sanitizeErrorMessage(err));
+  }
+}
+
+function saveAgentsToDisk() {
+  if (agentsPersistDebounceTimer) clearTimeout(agentsPersistDebounceTimer);
+  agentsPersistDebounceTimer = setTimeout(() => {
+    try {
+      const main = agentRegistry.get(AGENT_ID);
+      const data = [
+        ...(main ? [{ id: AGENT_ID, name: main.name, role: main.role }] : []),
+        ...[...agentRegistry.values()].filter((a) => a.id !== AGENT_ID),
+      ];
+      fs.mkdirSync(path.dirname(AGENTS_FILE), { recursive: true });
+      fs.writeFileSync(AGENTS_FILE, JSON.stringify(data, null, 2), "utf8");
+    } catch (err) {
+      console.warn("[hermes-adapter] Could not save agents:", sanitizeErrorMessage(err));
+    }
+  }, 500);
+}
+
+const AGENT_FILES_FILE = path.join(HOME, ".hermes", "hermes3d-agent-files.json");
+let agentFilesPersistDebounceTimer = null;
+
+function loadAgentFilesFromDisk() {
+  try {
+    if (fs.existsSync(AGENT_FILES_FILE)) {
+      const raw = fs.readFileSync(AGENT_FILES_FILE, "utf8");
+      const data = JSON.parse(raw);
+      if (data && typeof data === "object") {
+        for (const [key, content] of Object.entries(data)) {
+          if (typeof content === "string") agentFiles.set(key, content);
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("[hermes-adapter] Could not load agent files:", sanitizeErrorMessage(err));
+  }
+}
+
+function saveAgentFilesToDisk() {
+  if (agentFilesPersistDebounceTimer) clearTimeout(agentFilesPersistDebounceTimer);
+  agentFilesPersistDebounceTimer = setTimeout(() => {
+    try {
+      const data = Object.fromEntries(agentFiles.entries());
+      fs.mkdirSync(path.dirname(AGENT_FILES_FILE), { recursive: true });
+      fs.writeFileSync(AGENT_FILES_FILE, JSON.stringify(data, null, 2), "utf8");
+    } catch (err) {
+      console.warn("[hermes-adapter] Could not save agent files:", sanitizeErrorMessage(err));
+    }
+  }, 500);
+}
+
+// ---------------------------------------------------------------------------
+// Orchestrator persona — build the real system prompt from the saved
+// IDENTITY/SOUL/AGENTS/USER/HEARTBEAT files instead of always falling back
+// to the generic ORCHESTRATOR_SYSTEM_PROMPT. A custom persona (e.g. a
+// renamed "CORPSEC" orchestrator) is otherwise only cosmetic — these files
+// are editable in the UI but were never actually read into the chat prompt.
+// ---------------------------------------------------------------------------
+
+const ORCHESTRATOR_TOOLS_BRIEFING = `
+You have tools to build and manage your team autonomously:
+
+- **spawn_agent**: Create a new specialist agent with a name, role, instructions, and settings (wipe/continuity/boundaries).
+- **delegate_task**: Send a task to a specific agent and receive their response.
+- **list_team**: See all current team members and their IDs, names, and roles.
+- **configure_agent**: Update an agent's name, role/title, instructions, or settings.
+- **dismiss_agent**: Remove an agent from the team.
+- **read_agent_context**: Read the recent conversation history of another agent to understand what they are currently working on, what they have already done, or what their status is. Use this for coordination — before delegating a task, check if the agent already has relevant context.
+
+Each spawned agent will appear as an animated character in the 3D office — walking when active, standing when idle.
+Be concise in your responses to the user; do the heavy lifting via tool calls.`;
+
+const ORCHESTRATOR_PERSONA_FILES = new Set(["IDENTITY.md", "SOUL.md", "AGENTS.md", "USER.md", "HEARTBEAT.md"]);
+
+function buildOrchestratorSystemPrompt() {
+  const sections = [];
+  for (const name of ORCHESTRATOR_PERSONA_FILES) {
+    const content = agentFiles.get(`${AGENT_ID}/${name}`);
+    if (typeof content === "string" && content.trim()) sections.push(content.trim());
+  }
+  if (sections.length === 0) return ORCHESTRATOR_SYSTEM_PROMPT;
+  return `${sections.join("\n\n---\n\n")}\n\n---\n${ORCHESTRATOR_TOOLS_BRIEFING}`;
+}
+
+function refreshOrchestratorPersona() {
+  const main = agentRegistry.get(AGENT_ID);
+  if (!main) return;
+  main.systemPrompt = buildOrchestratorSystemPrompt();
+  const identity = agentFiles.get(`${AGENT_ID}/IDENTITY.md`);
+  if (typeof identity === "string") {
+    const nameMatch = identity.match(/^-\s*Name:\s*(.+)$/m);
+    if (nameMatch && nameMatch[1].trim()) main.name = nameMatch[1].trim();
+    const roleMatch = identity.match(/^-\s*Creature:\s*(.+)$/m);
+    if (roleMatch && roleMatch[1].trim()) main.role = roleMatch[1].trim();
+  }
+}
 
 function loadHistoryFromDisk() {
   try {
@@ -288,6 +550,148 @@ function clearHistory(sessionKey) {
 
 function randomId() {
   return require("crypto").randomBytes(8).toString("hex");
+}
+
+// ---------------------------------------------------------------------------
+// Deterministic packaged-skill install
+//
+// Hermes3D's marketplace installs a packaged skill by spinning up a temporary
+// "Skill Installer" agent and asking the model to write the skill's files
+// using file tools. This adapter never hands out real filesystem tools to
+// non-orchestrator agents (see runAgenticLoop callers below: tools = [] for
+// everyone but the main orchestrator) so that LLM-driven install silently
+// no-ops. Instead of threading real fs tool-calling through the agentic
+// loop, we detect the installer's well-known message format here and write
+// the files directly — faster, free, and 100% reliable.
+// ---------------------------------------------------------------------------
+
+const INSTALLER_MESSAGE_MARKER = "Create these exact skill files inside the current workspace.";
+
+function parseInstallerMessage(message) {
+  const entries = [];
+  const regex = /^- path: ("(?:[^"\\]|\\.)*")\n {2}content: ("(?:[^"\\]|\\.)*")$/gm;
+  let match;
+  while ((match = regex.exec(message))) {
+    try {
+      const relPath = JSON.parse(match[1]);
+      const content = JSON.parse(match[2]);
+      if (typeof relPath === "string" && typeof content === "string") {
+        entries.push({ relPath, content });
+      }
+    } catch {
+      // skip malformed entry
+    }
+  }
+  return entries;
+}
+
+function installSkillFilesToDisk(workspaceDir, entries) {
+  const written = [];
+  for (const { relPath, content } of entries) {
+    // relPath looks like "skills/<skillKey>/SKILL.md" — keep it inside workspaceDir.
+    const normalized = relPath.replace(/^[/\\]+/, "");
+    const absPath = path.join(workspaceDir, normalized);
+    const resolvedWorkspace = path.resolve(workspaceDir);
+    const resolvedTarget = path.resolve(absPath);
+    if (resolvedTarget !== resolvedWorkspace && !resolvedTarget.startsWith(resolvedWorkspace + path.sep)) {
+      throw new Error(`Refusing to write outside the agent workspace: ${relPath}`);
+    }
+    fs.mkdirSync(path.dirname(absPath), { recursive: true });
+    fs.writeFileSync(absPath, content, "utf8");
+    written.push(absPath);
+  }
+  return written;
+}
+
+function parseSkillFrontmatter(content) {
+  const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  const fields = { name: "", description: "" };
+  if (!match) return fields;
+  for (const line of match[1].split(/\r?\n/)) {
+    const nameMatch = line.match(/^name:\s*(.+)$/);
+    if (nameMatch) fields.name = nameMatch[1].trim();
+    const descMatch = line.match(/^description:\s*(.+)$/);
+    if (descMatch) fields.description = descMatch[1].trim();
+  }
+  return fields;
+}
+
+/** Scan a workspace's skills/ directory for real, on-disk SKILL.md entries. */
+function scanInstalledSkills(workspaceDir) {
+  const skillsDir = path.join(workspaceDir, "skills");
+  const entries = [];
+  let skillKeys = [];
+  try {
+    skillKeys = fs.readdirSync(skillsDir, { withFileTypes: true })
+      .filter((d) => d.isDirectory())
+      .map((d) => d.name);
+  } catch {
+    return entries;
+  }
+  for (const skillKey of skillKeys) {
+    const filePath = path.join(skillsDir, skillKey, "SKILL.md");
+    let content;
+    try {
+      content = fs.readFileSync(filePath, "utf8");
+    } catch {
+      continue;
+    }
+    const { name, description } = parseSkillFrontmatter(content);
+    entries.push({
+      name: name || skillKey,
+      description,
+      source: "hermes-workspace",
+      bundled: false,
+      filePath,
+      baseDir: path.join(skillsDir, skillKey),
+      skillKey,
+      always: false,
+      disabled: false,
+      blockedByAllowlist: false,
+      eligible: true,
+      requirements: { bins: [], anyBins: [], env: [], config: [], os: [] },
+      missing: { bins: [], anyBins: [], env: [], config: [], os: [] },
+      configChecks: [],
+      install: [],
+    });
+  }
+  return entries;
+}
+
+// ---------------------------------------------------------------------------
+// Adapter-local gateway config store (per-agent skills allowlist, overrides).
+//
+// Deliberately NOT ~/.hermes/config.json — that is the real Hermes CLI's own
+// config file, and this adapter must never write to it. config.get/config.set
+// here back the marketplace's "enable skill for agent" allowlist UI only.
+// ---------------------------------------------------------------------------
+
+const GATEWAY_CONFIG_FILE = path.join(HOME, ".hermes", "hermes3d-gateway-config.json");
+let gatewayConfig = {};
+
+function loadGatewayConfigFromDisk() {
+  try {
+    if (fs.existsSync(GATEWAY_CONFIG_FILE)) {
+      const raw = fs.readFileSync(GATEWAY_CONFIG_FILE, "utf8");
+      const data = JSON.parse(raw);
+      if (data && typeof data === "object") gatewayConfig = data;
+    }
+  } catch (err) {
+    console.warn("[hermes-adapter] Could not load gateway config:", sanitizeErrorMessage(err));
+  }
+}
+
+function saveGatewayConfigToDisk() {
+  try {
+    fs.mkdirSync(path.dirname(GATEWAY_CONFIG_FILE), { recursive: true });
+    fs.writeFileSync(GATEWAY_CONFIG_FILE, JSON.stringify(gatewayConfig, null, 2), "utf8");
+  } catch (err) {
+    console.warn("[hermes-adapter] Could not save gateway config:", sanitizeErrorMessage(err));
+  }
+}
+
+function gatewayConfigHash() {
+  return require("crypto").createHash("sha256").update(JSON.stringify(gatewayConfig)).digest("hex").slice(0, 16);
 }
 
 function redactSecrets(value) {
@@ -477,6 +881,9 @@ async function completeOneTurn(messages, model, tools) {
 async function streamOneTurn(messages, model, tools, onTextDelta, abortCheck) {
   const body = { model, messages, stream: true };
   if (tools && tools.length > 0) { body.tools = tools; body.tool_choice = "auto"; }
+  if (process.env.HERMES_ADAPTER_DEBUG_REQUESTS) {
+    console.log("[hermes-adapter][DEBUG] outgoing request:", JSON.stringify({ model, messages, tools: tools?.length || 0 }, null, 2));
+  }
 
   const resolvedModel = await resolveHermesModel(model);
   body.model = resolvedModel;
@@ -584,6 +991,7 @@ async function execSpawnAgent(args) {
   });
 
   console.log(`[hermes-adapter] Spawned agent: ${name} (${newId})`);
+  saveAgentsToDisk();
 
   // Broadcast presence so the 3D office loads the new agent immediately
   broadcastEvent({
@@ -602,7 +1010,7 @@ async function execSpawnAgent(args) {
   return JSON.stringify({ ok: true, agent_id: newId, name, role });
 }
 
-async function execDelegateTask(args) {
+async function execDelegateTask(args, sendEvent) {
   const targetId = typeof args.agent_id === "string" ? args.agent_id.trim() : "";
   const message = typeof args.message === "string" ? args.message.trim() : "";
   if (!targetId || !message) return JSON.stringify({ ok: false, error: "agent_id and message required" });
@@ -611,13 +1019,7 @@ async function execDelegateTask(args) {
   if (!agent) return JSON.stringify({ ok: false, error: `Agent ${targetId} not found` });
 
   const sessionKey = `agent:${targetId}:${MAIN_KEY}`;
-  const history = getHistory(sessionKey);
   const model = agent.settings.model || HERMES_MODEL;
-
-  // Build messages for sub-agent
-  const systemMsg = agent.systemPrompt ? [{ role: "system", content: agent.systemPrompt }] : [];
-  const contextHistory = agent.settings.wipe ? [] : [...history];
-  const messages = [...systemMsg, ...contextHistory, { role: "user", content: message }];
 
   // Emit chat start event for this sub-agent
   const subRunId = randomId();
@@ -631,18 +1033,15 @@ async function execDelegateTask(args) {
 
   let responseText = "";
   try {
-    const result = await streamOneTurn(messages, model, [], (partial) => {
-      responseText = partial;
-      emitSub("delta", { message: { role: "assistant", content: partial } });
-    }, null);
-    responseText = result.textContent;
-
-    // Persist to sub-agent history
-    if (agent.settings.continuity !== false) {
-      history.push({ role: "user", content: message });
-      history.push({ role: "assistant", content: responseText });
-      saveHistoryToDisk();
-    }
+    // Sub-agents get the same file tools (scoped to their own workspace) as a
+    // direct chat turn would — delegation shouldn't be a lesser capability.
+    responseText = await runAgenticLoop({
+      sessionKey, agentId: targetId, userMessage: message, model,
+      tools: FS_TOOLS,
+      emitDelta: (partial) => emitSub("delta", { message: { role: "assistant", content: partial } }),
+      abortCheck: () => false,
+      sendEvent,
+    });
 
     emitSub("final", { stopReason: "end_turn", message: { role: "assistant", content: responseText } });
 
@@ -686,6 +1085,7 @@ function execConfigureAgent(args) {
   }
   if (typeof args.model === "string" && args.model.trim()) agent.settings.model = args.model.trim();
   console.log(`[hermes-adapter] Configured agent: ${agent.name} (${targetId})`);
+  saveAgentsToDisk();
   broadcastEvent({
     type: "event", event: "presence",
     payload: {
@@ -709,6 +1109,7 @@ function execDismissAgent(args) {
   agentRegistry.delete(targetId);
   clearHistory(`agent:${targetId}:${MAIN_KEY}`);
   console.log(`[hermes-adapter] Dismissed agent: ${agent.name} (${targetId})`);
+  saveAgentsToDisk();
   return JSON.stringify({ ok: true, dismissed: targetId });
 }
 
@@ -739,9 +1140,87 @@ function execReadAgentContext(args) {
   });
 }
 
-async function executeToolCall(tc, sendEvent) {
+const MAX_FS_TOOL_FILE_CHARS = 50000;
+const MAX_FS_TOOL_WRITE_CHARS = 200000;
+
+/** Resolve a relative path inside a workspace, refusing anything that escapes it. */
+function resolveWorkspaceRelativePath(workspace, relPath) {
+  const normalized = String(relPath || ".").replace(/^[/\\]+/, "");
+  const resolvedWorkspace = path.resolve(workspace);
+  const resolvedTarget = path.resolve(resolvedWorkspace, normalized);
+  if (resolvedTarget !== resolvedWorkspace && !resolvedTarget.startsWith(resolvedWorkspace + path.sep)) {
+    throw new Error(`Path escapes your workspace: ${relPath}`);
+  }
+  return resolvedTarget;
+}
+
+function execReadFile(agentId, args) {
+  const agent = agentRegistry.get(agentId);
+  if (!agent?.workspace) return JSON.stringify({ ok: false, error: "No workspace for this agent." });
+  const relPath = typeof args.path === "string" ? args.path.trim() : "";
+  if (!relPath) return JSON.stringify({ ok: false, error: "path is required." });
+  try {
+    const absPath = resolveWorkspaceRelativePath(agent.workspace, relPath);
+    if (!fs.existsSync(absPath)) return JSON.stringify({ ok: false, error: `File not found: ${relPath}` });
+    const stat = fs.statSync(absPath);
+    if (stat.isDirectory()) return JSON.stringify({ ok: false, error: `${relPath} is a directory, not a file. Use list_directory.` });
+    let content = fs.readFileSync(absPath, "utf8");
+    let truncated = false;
+    if (content.length > MAX_FS_TOOL_FILE_CHARS) {
+      content = content.slice(0, MAX_FS_TOOL_FILE_CHARS);
+      truncated = true;
+    }
+    return JSON.stringify({ ok: true, path: relPath, content, truncated });
+  } catch (err) {
+    return JSON.stringify({ ok: false, error: sanitizeErrorMessage(err) });
+  }
+}
+
+function execWriteFile(agentId, args) {
+  const agent = agentRegistry.get(agentId);
+  if (!agent?.workspace) return JSON.stringify({ ok: false, error: "No workspace for this agent." });
+  const relPath = typeof args.path === "string" ? args.path.trim() : "";
+  const content = typeof args.content === "string" ? args.content : "";
+  if (!relPath) return JSON.stringify({ ok: false, error: "path is required." });
+  if (content.length > MAX_FS_TOOL_WRITE_CHARS) {
+    return JSON.stringify({ ok: false, error: `Content too large (${content.length} chars, max ${MAX_FS_TOOL_WRITE_CHARS}).` });
+  }
+  try {
+    const absPath = resolveWorkspaceRelativePath(agent.workspace, relPath);
+    fs.mkdirSync(path.dirname(absPath), { recursive: true });
+    fs.writeFileSync(absPath, content, "utf8");
+    console.log(`[hermes-adapter] ${agentId} wrote ${relPath} (${content.length} chars)`);
+    return JSON.stringify({ ok: true, path: relPath, bytesWritten: Buffer.byteLength(content, "utf8") });
+  } catch (err) {
+    return JSON.stringify({ ok: false, error: sanitizeErrorMessage(err) });
+  }
+}
+
+function execListDirectory(agentId, args) {
+  const agent = agentRegistry.get(agentId);
+  if (!agent?.workspace) return JSON.stringify({ ok: false, error: "No workspace for this agent." });
+  const relPath = typeof args.path === "string" && args.path.trim() ? args.path.trim() : ".";
+  try {
+    const absPath = resolveWorkspaceRelativePath(agent.workspace, relPath);
+    if (!fs.existsSync(absPath)) return JSON.stringify({ ok: true, path: relPath, exists: false, entries: [] });
+    const stat = fs.statSync(absPath);
+    if (!stat.isDirectory()) return JSON.stringify({ ok: false, error: `${relPath} is a file, not a directory. Use read_file.` });
+    const entries = fs.readdirSync(absPath, { withFileTypes: true }).map((e) => ({
+      name: e.name,
+      type: e.isDirectory() ? "directory" : "file",
+    }));
+    return JSON.stringify({ ok: true, path: relPath, exists: true, entries });
+  } catch (err) {
+    return JSON.stringify({ ok: false, error: sanitizeErrorMessage(err) });
+  }
+}
+
+async function executeToolCall(tc, sendEvent, agentId) {
   console.log(`[hermes-adapter] Tool call: ${tc.name}`, JSON.stringify(tc.args).slice(0, 120));
   switch (tc.name) {
+    case "read_file":            return execReadFile(agentId, tc.args);
+    case "write_file":           return execWriteFile(agentId, tc.args);
+    case "list_directory":       return execListDirectory(agentId, tc.args);
     case "spawn_agent":          return execSpawnAgent(tc.args, sendEvent);
     case "delegate_task":        return execDelegateTask(tc.args, sendEvent);
     case "list_team":            return execListTeam();
@@ -756,9 +1235,9 @@ async function executeToolCall(tc, sendEvent) {
 // Agentic loop — handles multi-round tool-calling conversations
 // ---------------------------------------------------------------------------
 
-async function runAgenticLoop({ sessionKey, agentId, userMessage, model, tools, emitDelta, abortCheck, sendEvent }) {
+async function runAgenticLoop({ sessionKey, agentId, userMessage, model, tools, emitDelta, abortCheck, sendEvent, language }) {
   const agent = agentRegistry.get(agentId);
-  const systemMsg = agent?.systemPrompt ? [{ role: "system", content: agent.systemPrompt }] : [];
+  const systemMsg = [{ role: "system", content: buildAgentSystemPrompt(agentId, language) }];
   const history = getHistory(sessionKey);
   const contextHistory = (agent?.settings?.wipe) ? [] : [...history];
   let messages = [...systemMsg, ...contextHistory, { role: "user", content: userMessage }];
@@ -791,7 +1270,7 @@ async function runAgenticLoop({ sessionKey, agentId, userMessage, model, tools, 
       // Execute all tool calls and collect results
       const toolResults = await Promise.all(
         toolCalls.map(async (tc) => {
-          const result = await executeToolCall(tc, sendEvent);
+          const result = await executeToolCall(tc, sendEvent, agentId);
           return { role: "tool", tool_call_id: tc.id, content: result };
         })
       );
@@ -851,6 +1330,7 @@ async function handleMethod(method, params, id, sendEvent) {
         role: "", systemPrompt: `You are ${agentName}.`,
         settings: { wipe: false, continuity: true, model: HERMES_MODEL },
       });
+      saveAgentsToDisk();
       return resOk(id, { agentId: newId, name: agentName, workspace });
     }
 
@@ -859,6 +1339,7 @@ async function handleMethod(method, params, id, sendEvent) {
       if (delId && delId !== AGENT_ID) {
         agentRegistry.delete(delId);
         clearHistory(`agent:${delId}:${MAIN_KEY}`);
+        saveAgentsToDisk();
       }
       return resOk(id, { ok: true, removedBindings: 0 });
     }
@@ -870,6 +1351,7 @@ async function handleMethod(method, params, id, sendEvent) {
         if (typeof p.name === "string" && p.name.trim()) existing.name = p.name.trim();
         if (typeof p.workspace === "string" && p.workspace.trim()) existing.workspace = p.workspace.trim();
         if (typeof p.role === "string") existing.role = p.role.trim();
+        saveAgentsToDisk();
       }
       return resOk(id, { ok: true, removedBindings: 0 });
     }
@@ -881,20 +1363,65 @@ async function handleMethod(method, params, id, sendEvent) {
     }
 
     case "agents.files.set": {
-      const key = `${p.agentId || AGENT_ID}/${p.name || ""}`;
+      const filesAgentId = p.agentId || AGENT_ID;
+      const key = `${filesAgentId}/${p.name || ""}`;
       agentFiles.set(key, typeof p.content === "string" ? p.content : "");
+      saveAgentFilesToDisk();
+      if (filesAgentId === AGENT_ID && ORCHESTRATOR_PERSONA_FILES.has(p.name)) {
+        refreshOrchestratorPersona();
+        saveAgentsToDisk();
+      }
       return resOk(id, {});
     }
 
     // --- Config -------------------------------------------------------------
 
     case "config.get":
-      return resOk(id, { config: { gateway: { reload: { mode: "hot" } } },
-        hash: "hermes-adapter", exists: true, path: CONFIG_PATH });
+      return resOk(id, {
+        config: { gateway: { reload: { mode: "hot" } }, ...gatewayConfig },
+        hash: gatewayConfigHash(), exists: true, path: GATEWAY_CONFIG_FILE,
+      });
 
     case "config.patch":
-    case "config.set":
-      return resOk(id, { hash: "hermes-adapter" });
+    case "config.set": {
+      const configAgentIds = (cfg) => {
+        const list = cfg?.agents?.list;
+        return Array.isArray(list) ? list.map((e) => e?.id).filter((v) => typeof v === "string") : [];
+      };
+      const idsBefore = new Set(configAgentIds(gatewayConfig));
+
+      if (typeof p.raw === "string") {
+        try {
+          const parsed = JSON.parse(p.raw);
+          if (parsed && typeof parsed === "object") gatewayConfig = parsed;
+        } catch (err) {
+          throw new Error(`Invalid config payload: ${sanitizeErrorMessage(err)}`);
+        }
+      } else if (p.patch && typeof p.patch === "object") {
+        gatewayConfig = { ...gatewayConfig, ...p.patch };
+      }
+      saveGatewayConfigToDisk();
+
+      // Temporary "Skill Installer"/"Skill Remover" agents are the only
+      // agents ever added to the config-based list (via updateGatewayAgentOverrides
+      // during a marketplace install). When one drops out of that list — the
+      // installer cleans up after itself — remove it from the live registry
+      // too, so it stops showing up as a phantom character in the office.
+      const idsAfter = new Set(configAgentIds(gatewayConfig));
+      for (const removedId of idsBefore) {
+        if (idsAfter.has(removedId)) continue;
+        if (removedId === AGENT_ID) continue;
+        if (agentRegistry.delete(removedId)) {
+          clearHistory(`agent:${removedId}:${MAIN_KEY}`);
+          console.log(`[hermes-adapter] Cleaned up temporary agent: ${removedId}`);
+        }
+      }
+      if (idsBefore.size !== idsAfter.size || [...idsBefore].some((v) => !idsAfter.has(v))) {
+        saveAgentsToDisk();
+      }
+
+      return resOk(id, { hash: gatewayConfigHash() });
+    }
 
     // --- Sessions -----------------------------------------------------------
 
@@ -959,6 +1486,8 @@ async function handleMethod(method, params, id, sendEvent) {
       const sessionKey = typeof p.sessionKey === "string" ? p.sessionKey : MAIN_SESSION_KEY;
       const userMessage = typeof p.message === "string" ? p.message.trim() : String(p.message || "").trim();
       const runId = (typeof p.idempotencyKey === "string" && p.idempotencyKey) ? p.idempotencyKey : randomId();
+      const chatLanguage = normalizeChatLanguage(p.language);
+      if (chatLanguage) currentChatLanguage = chatLanguage;
 
       if (!userMessage) return resOk(id, { status: "no-op", runId });
 
@@ -966,6 +1495,30 @@ async function handleMethod(method, params, id, sendEvent) {
       const sessionAgentId = sessionKey.startsWith("agent:") ? sessionKey.split(":")[1] : AGENT_ID;
       const agent = agentRegistry.get(sessionAgentId);
       const isOrchestrator = sessionAgentId === AGENT_ID;
+
+      // Deterministic packaged-skill install — see installSkillFilesToDisk() above.
+      if (userMessage.startsWith(INSTALLER_MESSAGE_MARKER) && agent?.workspace) {
+        activeRuns.set(runId, { runId, sessionKey, agentId: sessionAgentId, abort() {} });
+        setImmediate(() => {
+          let seqCounter = 0;
+          const emitChat = (state, extra) => {
+            sendEvent({ type: "event", event: "chat", seq: seqCounter++,
+              payload: { runId, sessionKey, state, ...extra } });
+          };
+          try {
+            const entries = parseInstallerMessage(userMessage);
+            if (entries.length === 0) throw new Error("No skill files found in installer message.");
+            const written = installSkillFilesToDisk(agent.workspace, entries);
+            console.log(`[hermes-adapter] Installed ${written.length} skill file(s) into ${agent.workspace}`);
+            emitChat("final", { stopReason: "end_turn", message: { role: "assistant", content: "INSTALLED" } });
+          } catch (err) {
+            emitChat("error", { errorMessage: sanitizeErrorMessage(err) || "Skill install failed" });
+          } finally {
+            activeRuns.delete(runId);
+          }
+        });
+        return resOk(id, { status: "started", runId });
+      }
 
       let aborted = false;
       activeRuns.set(runId, {
@@ -990,13 +1543,14 @@ async function handleMethod(method, params, id, sendEvent) {
         };
 
         try {
-          // Only the orchestrator gets team management tools
-          const tools = isOrchestrator ? TEAM_TOOLS : [];
+          // Every agent gets file tools scoped to its own workspace; only the
+          // orchestrator additionally gets team management tools.
+          const tools = isOrchestrator ? [...TEAM_TOOLS, ...FS_TOOLS] : FS_TOOLS;
 
           const finalText = await runAgenticLoop({
             sessionKey, agentId: sessionAgentId, userMessage,
             model, tools, emitDelta: onTextDelta,
-            abortCheck: () => aborted, sendEvent,
+            abortCheck: () => aborted, sendEvent, language: chatLanguage,
           });
 
           if (aborted) {
@@ -1086,8 +1640,16 @@ async function handleMethod(method, params, id, sendEvent) {
 
     // --- Skills & models ----------------------------------------------------
 
-    case "skills.status":
-      return resOk(id, { skills: [] });
+    case "skills.status": {
+      const statusAgentId = typeof p.agentId === "string" && p.agentId.trim() ? p.agentId.trim() : AGENT_ID;
+      const statusAgent = agentRegistry.get(statusAgentId);
+      const workspaceDir = statusAgent?.workspace || `${HOME}/.hermes/workspace-${statusAgentId}`;
+      return resOk(id, {
+        workspaceDir,
+        managedSkillsDir: path.join(workspaceDir, "skills"),
+        skills: scanInstalledSkills(workspaceDir),
+      });
+    }
 
     case "models.list":
       try {
@@ -1276,4 +1838,9 @@ function startAdapter() {
 }
 
 loadHistoryFromDisk();
+loadAgentsFromDisk();
+loadAgentFilesFromDisk();
+loadGatewayConfigFromDisk();
+refreshOrchestratorPersona();
+saveAgentsToDisk();
 startAdapter();
