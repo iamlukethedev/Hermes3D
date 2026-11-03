@@ -156,7 +156,6 @@ import {
   speechTurnDurationMs,
   type SpeechTurn,
 } from "@/features/retro-office/core/speechTurns";
-import { ConversationChatterAudio } from "@/features/retro-office/systems/conversationChatterAudio";
 import {
   loadFurniture,
   markAtmMigrationApplied,
@@ -3095,26 +3094,9 @@ export function RetroOffice3D({
     suppressSceneSpeechBubbles,
   ]);
 
-  // Soft murmur while any huddle is active; browsers require a user gesture
-  // before audio can start, so unlock on the first pointer interaction.
-  const chatterAudioRef = useRef<ConversationChatterAudio | null>(null);
-  useEffect(() => {
-    if (!chatterAudioRef.current) {
-      chatterAudioRef.current = new ConversationChatterAudio();
-    }
-    chatterAudioRef.current.setActiveConversationCount(
-      conversationGroups.length,
-    );
-  }, [conversationGroups]);
-  useEffect(() => {
-    const unlock = () => chatterAudioRef.current?.unlock();
-    window.addEventListener("pointerdown", unlock);
-    return () => {
-      window.removeEventListener("pointerdown", unlock);
-      chatterAudioRef.current?.dispose();
-      chatterAudioRef.current = null;
-    };
-  }, []);
+  // Synthesized huddle-murmur audio (ConversationChatterAudio) is disabled:
+  // it had no settings toggle, and the fake-speech blips read as unsettling
+  // rather than ambient.
   // New Idea 2: camera preset target ref (shared into Canvas).
   const cameraPresetRef = useRef<{
     pos: [number, number, number];
