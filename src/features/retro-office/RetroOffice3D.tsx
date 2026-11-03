@@ -3214,7 +3214,6 @@ export function RetroOffice3D({
     useState<MockTextMessageScenario | null>(null);
   const activePhoneCallFlowKeyRef = useRef<string | null>(null);
   const activeTextMessageFlowKeyRef = useRef<string | null>(null);
-  const boothAudioCtxRef = useRef<AudioContext | null>(null);
   const effectivePhoneBoothAgentIdRef = useRef<string | null>(null);
   const effectivePhoneCallScenarioRef = useRef<MockPhoneCallScenario | null>(
     null,
@@ -3873,20 +3872,13 @@ export function RetroOffice3D({
     overviewPreset,
   ]);
 
-  const getBoothAudioContext = useCallback(async () => {
-    if (typeof window === "undefined") return null;
-    const AudioContextCtor =
-      window.AudioContext ||
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ((window as any).webkitAudioContext as typeof AudioContext | undefined);
-    if (!AudioContextCtor) return null;
-    if (!boothAudioCtxRef.current) {
-      boothAudioCtxRef.current = new AudioContextCtor();
-    }
-    if (boothAudioCtxRef.current.state === "suspended") {
-      await boothAudioCtxRef.current.resume();
-    }
-    return boothAudioCtxRef.current;
+  // Messaging-booth sound effects (key tones, ring tone, and TTS voice
+  // playback) are disabled: no settings toggle, and they fire constantly
+  // during normal agent messaging activity. Short-circuiting here silences
+  // playPhoneKeyTone/playTextKeyTone/playPhoneRingTone/playBoothVoice in one
+  // place — they all early-return when this resolves to null.
+  const getBoothAudioContext = useCallback(async (): Promise<AudioContext | null> => {
+    return null;
   }, []);
 
   const playPhoneKeyTone = useCallback(async () => {
